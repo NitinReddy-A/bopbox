@@ -56,6 +56,11 @@ object WebViewPool {
 
   fun peek(appId: String): BopboxWebView? = views[appId]
 
+  /** Run [block] on every live WebView (main thread). */
+  fun forEach(block: (BopboxWebView) -> Unit) {
+    views.values.toList().forEach(block)
+  }
+
   /** Called when the hosting activity is destroyed: keep views alive on the application context. */
   fun detachFromActivity(view: BopboxWebView) {
     (view.parent as? ViewGroup)?.removeView(view)

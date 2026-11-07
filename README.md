@@ -22,6 +22,18 @@ as two "apps" inside a single APK, and bolts on the stuff a real music app has:
 | 🍪 **Stays logged in** | Persistent cookies; per-app sign-out and "nuke everything" in settings |
 | 🌗 **Themes** | Dark / light / system, neon "late-night radio" vibe |
 
+<p align="center">
+  <img src="docs/screenshots/home-dark.jpg" width="200" alt="Home (dark)" />
+  <img src="docs/screenshots/home-playing.jpg" width="200" alt="Home with now playing" />
+  <img src="docs/screenshots/spotify.jpg" width="200" alt="Spotify web player" />
+  <img src="docs/screenshots/pip.jpg" width="200" alt="YouTube in picture-in-picture" />
+</p>
+<p align="center">
+  <img src="docs/screenshots/notification.jpg" width="200" alt="Media controls" />
+  <img src="docs/screenshots/widget.jpg" width="200" alt="Quick access widget" />
+  <img src="docs/screenshots/settings.jpg" width="200" alt="Settings" />
+</p>
+
 > Personal project, not affiliated with YouTube, Google or Spotify. Ad blocking depends on how those
 > services behave this week — it is very good, not magic. Use your own accounts responsibly.
 
@@ -63,31 +75,55 @@ plugins/withBopbox.js     Config plugin (PiP, singleTask, cleartext off)
 scripts/                  icon generator, e2e helpers
 ```
 
+## Install
+
+Grab the APK from the latest [GitHub release](https://github.com/NitinReddy-A/bopbox/releases), open it on your
+phone (allow "Install unknown apps" for your browser/files app), then:
+
+1. Allow notifications when asked (media controls live there).
+2. Open YouTube or Spotify from the home screen and sign in once — cookies persist.
+3. Long-press your home screen → Widgets → Bopbox to add the player / mini / quick-access widgets.
+
 ## Build it
 
-Prereqs: Node 20+, an Expo account (for cloud builds) or the Android SDK + JDK 17+ (for local builds).
+Prereqs: Node 20+ and an Expo account (cloud builds), or the Android SDK + JDK 17+ (local builds).
 
 ```bash
 npm install
-npm test                 # JS + injected-script tests
+npm test               # JS app + injected page-script tests (jest / jsdom)
 npm run typecheck
+npm run lint
 ```
 
 **Cloud APK (EAS):**
 
 ```bash
-npx eas-cli build -p android --profile preview
+npx eas-cli build -p android --profile preview     # the shippable APK
+npx eas-cli build -p android --profile e2e         # same, with WebView debugging for e2e tests
 ```
 
-**Local APK:**
+**Local:**
 
 ```bash
 npx expo prebuild -p android --clean
 cd android && ./gradlew :bopbox-core:testDebugUnitTest assembleRelease
 ```
 
-The APK lands in `android/app/build/outputs/apk/release/`. Sideload it, allow notifications, add a
-widget, put on a playlist, lock the phone. Bop.
+> On Windows, React Native's C++ build can hit the 260-character path limit. Build from a short
+> path (e.g. `C:b`) or use the EAS cloud build.
+
+## Tests
+
+| Layer | What | Where |
+|---|---|---|
+| Kotlin (JUnit) | filter engine (parsing, matching, cosmetics, perf on the real lists), navigation policy, bridge protocol, settings, user agents | `modules/bopbox-core/android/src/test` |
+| Page scripts (jest + jsdom) | background-play shims, media-session capture, command routing, YouTube ad pruning & skipping, Spotify ad muting, sign-in fix | `modules/bopbox-core/__tests__` |
+| App (jest + RNTL) | shell reducer, back handling, deep links, home/settings screens, hooks | `src/**/__tests__` |
+| End to end (emulator) | real APK driven over adb + DevTools: ad blocking, playback, MediaSession + notification controls, home-screen/PiP/screen-off/swipe-away playback, Spotify + Widevine, widgets | `scripts/e2e/run-e2e.mjs` |
+
+```bash
+node scripts/e2e/run-e2e.mjs path/to/bopbox-e2e.apk   # needs a running emulator/device
+```
 
 ## Known limits
 

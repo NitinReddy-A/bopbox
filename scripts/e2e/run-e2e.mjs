@@ -159,17 +159,34 @@ async function main() {
   );
   check('background-play visibility shim active', await yt.evaluate('document.visibilityState === "visible" && document.hidden === false'));
 
-  const signIn = await waitFor(
-    () => yt.evaluate('(function(){var a=document.querySelector(".mobile-topbar-header-sign-in-button a"); return a && a.getAttribute("href");})()'),
-    { label: 'sign-in button', timeout: 20000 },
-  ).catch(() => null);
-  check('signed-out header offers a working Google sign-in', /^https:\/\/accounts\.google\.com\//.test(signIn || ''), String(signIn).slice(0, 60));
-  await yt.evaluate('document.querySelector(".mobile-topbar-header-sign-in-button a").click()');
-  await sleep(6000);
+  // YouTube A/B-tests its header; when the signed-out "Open App" slot exists it must be rewritten.
+  await sleep(3000);
+  const signIn = await yt.evaluate(
+    '(function(){var a=document.querySelector(".mobile-topbar-header-sign-in-button a"); return a ? a.getAttribute("href") : "absent";})()',
+  );
+  check(
+    'signed-out header slot (if shown) is a Google sign-in',
+    signIn === 'absent' || /^https:\/\/accounts\.google\.com\//.test(signIn || ''),
+    String(signIn).slice(0, 60),
+  );
+  await yt.evaluate(
+    "location.href='https://accounts.google.com/ServiceLogin?service=youtube&passive=true&continue=https%3A%2F%2Fm.youtube.com%2F'",
+  );
   yt.close();
   const login = await connect('accounts.google.com').catch(() => null);
   check('Google sign-in opens inside the YouTube app', !!login);
   if (login) {
+    await waitFor(() => login.evaluate('document.readyState === "complete" && document.body.innerText.length > 50'), {
+      label: 'google sign-in page',
+      timeout: 45000,
+    }).catch(() => false);
+    const text = await login.evaluate('document.body.innerText');
+    check(
+      'Google does not block sign-in as an insecure embedded browser',
+      !/may not be secure|couldn.t sign you in|browser or app/i.test(text),
+      text.replace(/\s+/g, ' ').slice(0, 80),
+    );
+    screenshot('01b-google-sign-in');
     await login.evaluate("location.href='https://m.youtube.com/'");
     login.close();
   }

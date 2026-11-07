@@ -39,7 +39,12 @@ object PipController {
     isInPip = info.isInPictureInPictureMode
     // A PiP window is "background" for page scripts: sites must not pause themselves there.
     WebViewPool.setBackground(isInPip)
-    visibleAppId?.let { WebViewPool.peek(it)?.setPictureInPicture(isInPip) }
+    if (isInPip) {
+      visibleAppId?.let { WebViewPool.peek(it)?.setPictureInPicture(true) }
+    } else {
+      // Always reset every page: the visible app may have changed while we were in PiP.
+      WebViewPool.forEach { it.setPictureInPicture(false) }
+    }
     listeners.forEach { it(isInPip) }
   }
 

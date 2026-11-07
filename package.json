@@ -35,7 +35,8 @@
     "test:native": "cd android && ./gradlew :bopbox-core:testDebugUnitTest",
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
-    "prebuild": "expo prebuild -p android --clean"
+    "prebuild": "expo prebuild -p android --clean",
+    "e2e": "node scripts/e2e/run-e2e.mjs"
   },
   "private": true,
   "jest": {
