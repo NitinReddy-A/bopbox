@@ -8,6 +8,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Message
 import android.util.Log
+import android.view.KeyEvent
 import android.view.View
 import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
@@ -120,6 +121,13 @@ class BopboxWebView(
       super.onWindowVisibilityChanged(visibility)
     }
   }
+
+  /**
+   * Media keys (headset / Bluetooth buttons) must reach the MediaSession, not the page: the
+   * WebView would otherwise swallow them while Bopbox is in the foreground.
+   */
+  override fun dispatchKeyEvent(event: KeyEvent): Boolean =
+    if (KeyEvent.isMediaSessionKey(event.keyCode)) false else super.dispatchKeyEvent(event)
 
   // --- Settings ---------------------------------------------------------------------------
 

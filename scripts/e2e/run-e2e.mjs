@@ -148,11 +148,12 @@ async function main() {
   );
   check('background-play visibility shim active', await yt.evaluate('document.visibilityState === "visible" && document.hidden === false'));
 
+  // Blocked requests get an empty 200 with permissive CORS; a real cross-origin response would fail CORS.
   const adBody = await yt.evaluate(
-    "fetch('https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js',{mode:'no-cors'}).then(r=>r.type==='opaque'?'opaque':r.text()).then(t=>t==='opaque'?-1:t.length).catch(e=>'err:'+e)",
+    "fetch('https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js').then(r=>r.text()).then(t=>t.length).catch(e=>'err:'+e)",
   );
-  check('network ad request is blocked (empty body)', adBody === 0 || adBody === -1, `body=${adBody}`);
-  const normal = await yt.evaluate("fetch('/manifest.webmanifest').then(r=>r.status).catch(e=>'err:'+e)");
+  check('network ad request is blocked (empty body)', adBody === 0, `body=${adBody}`);
+  const normal = await yt.evaluate("fetch('/').then(r=>r.status).catch(e=>'err:'+e)");
   check('normal first-party request still allowed', normal === 200, `status=${normal}`);
 
   await yt.evaluate(`location.href='https://m.youtube.com/watch?v=${VIDEO_ID}'`);
@@ -165,6 +166,9 @@ async function main() {
     { label: 'video playing', timeout: 90000 },
   ).catch(() => false);
   check('YouTube video plays', playing);
+  // YouTube autoplays muted; unmute like a user tapping "tap to unmute" so real audio flows.
+  await yt.evaluate('(function(){var v=document.querySelector("video"); v.muted=false; v.volume=1; return true;})()');
+  await sleep(3000);
   check(
     'player response has no ad placements',
     await yt.evaluate('!(window.ytInitialPlayerResponse && (ytInitialPlayerResponse.adPlacements || ytInitialPlayerResponse.playerAds))'),
@@ -246,8 +250,9 @@ async function main() {
   shell('input keyevent KEYCODE_APP_SWITCH');
   await sleep(1500);
   // Remove the task from recents the same way a swipe does.
-  const tasks = shell('am stack list').match(/taskId=(\d+): com\.nitinreddy\.bopbox/);
-  if (tasks) shell(`am stack remove ${tasks[1]}`);
+  const recents = shell('dumpsys activity recents');
+  const task = recents.match(/Recent #\d+: Task\{[0-9a-f]+ #(\d+)[^}]*com\.nitinreddy\.bopbox/);
+  if (task) shell(`am stack remove ${task[1]} 2>/dev/null || cmd activity remove-task ${task[1]}`);
   await sleep(8000);
   check('process survives being swiped away while playing', shell(`pidof ${PKG}`).trim().length > 0);
   check('MediaSession still PLAYING after swipe-away', isPlayingState(mediaSessionState().state), `state=${mediaSessionState().state}`);

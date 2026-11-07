@@ -14,7 +14,7 @@ import java.util.concurrent.CopyOnWriteArraySet
 
 /**
  * Central "what's playing" brain. Receives page states from every app, decides which app owns
- * the media session, keeps only one app audible at a time, and fans updates out to the media
+ * the media session, keeps only one app audible at a time (WebView itself handles audio focus), and fans updates out to the media
  * notification, widgets and the React Native UI. Main-thread only.
  */
 object PlaybackCoordinator {
@@ -23,7 +23,7 @@ object PlaybackCoordinator {
   private val states = mutableMapOf<String, NowPlaying>()
   private val listeners = CopyOnWriteArraySet<(NowPlaying?) -> Unit>()
   private var controllerFuture: ListenableFuture<MediaController>? = null
-  private var audioFocus: AudioFocusController? = null
+  private var outputGuard: AudioOutputGuard? = null
   private lateinit var appContext: Context
   private var player: WebViewPlayer? = null
 
@@ -37,7 +37,7 @@ object PlaybackCoordinator {
   fun init(context: Context) {
     if (::appContext.isInitialized) return
     appContext = context.applicationContext
-    audioFocus = AudioFocusController(appContext) { cmd -> command(cmd) }
+    outputGuard = AudioOutputGuard(appContext) { cmd -> command(cmd) }
     listeners += { np -> WidgetUpdater.onNowPlaying(appContext, np) }
   }
 
@@ -49,6 +49,7 @@ object PlaybackCoordinator {
 
   /** A page reported its media state (main thread, from the WebMessage listener). */
   fun onPageState(state: NowPlaying) {
+    if (!onMain { onPageState(state) }) return
     val previous = states[state.appId]
     states[state.appId] = state
     if (state.isPlaying) {
@@ -59,7 +60,6 @@ object PlaybackCoordinator {
       }
       activeAppId = state.appId
       ensureSession()
-      audioFocus?.request()
     } else if (activeAppId == null && state.hasMedia) {
       activeAppId = state.appId
     }
@@ -68,6 +68,7 @@ object PlaybackCoordinator {
 
   /** Execute a transport command against the app that owns the session. */
   fun command(cmd: MediaCommand, arg: Double? = null) {
+    if (!onMain { command(cmd, arg) }) return
     val id = activeAppId ?: return
     WebViewPool.command(id, cmd, arg)
     val s = states[id] ?: return
@@ -82,11 +83,11 @@ object PlaybackCoordinator {
       states[id] = optimistic
       publish()
     }
-    if (cmd == MediaCommand.PLAY) audioFocus?.request()
   }
 
   /** The WebView for an app died (renderer crash); forget its state. */
   fun onAppGone(appId: String) {
+    if (!onMain { onAppGone(appId) }) return
     states.remove(appId)
     if (activeAppId == appId) {
       activeAppId = states.entries.firstOrNull { it.value.hasMedia }?.key
@@ -94,9 +95,16 @@ object PlaybackCoordinator {
     }
   }
 
+  /** True when already on the main thread; otherwise re-posts [block] there and returns false. */
+  private inline fun onMain(crossinline block: () -> Unit): Boolean {
+    if (Looper.myLooper() == Looper.getMainLooper()) return true
+    main.post { block() }
+    return false
+  }
+
   private fun publish() {
     val now = current
-    if (now?.isPlaying != true) audioFocus?.onPaused() else audioFocus?.onPlaying()
+    if (now?.isPlaying != true) outputGuard?.onPaused() else outputGuard?.onPlaying()
     player?.refresh()
     listeners.forEach { l -> runCatching { l(now) }.onFailure { Log.w(TAG, "listener failed", it) } }
   }
