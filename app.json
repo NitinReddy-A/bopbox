@@ -8,7 +8,9 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#0B0B12",
-    "platforms": ["android"],
+    "platforms": [
+      "android"
+    ],
     "android": {
       "package": "com.nitinreddy.bopbox",
       "versionCode": 1,
@@ -37,6 +39,17 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "5a2c238a-7a9c-4438-a6b2-97f372773e9f"
+      }
+    },
+    "owner": "nitin_gai"
   }
 }

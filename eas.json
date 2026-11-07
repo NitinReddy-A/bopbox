@@ -4,21 +4,16 @@
     "appVersionSource": "local"
   },
   "build": {
-    "development": {
-      "developmentClient": false,
+    "e2e": {
       "distribution": "internal",
-      "android": {
-        "buildType": "apk",
-        "gradleCommand": ":app:assembleDebug"
-      }
-    },
-    "preview": {
-      "distribution": "internal",
+      "env": {
+        "BOPBOX_WEBVIEW_DEBUG": "true"
+      },
       "android": {
         "buildType": "apk"
       }
     },
-    "production": {
+    "preview": {
       "distribution": "internal",
       "android": {
         "buildType": "apk"

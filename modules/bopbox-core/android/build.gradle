@@ -11,8 +11,9 @@ android {
   defaultConfig {
     versionCode 1
     versionName "1.0.0"
-    // E2E builds pass -PbopboxWebViewDebug=true so tests can drive pages over DevTools.
-    buildConfigField "boolean", "WEBVIEW_DEBUG", (project.findProperty("bopboxWebViewDebug") ?: "false").toString()
+    // E2E builds (-PbopboxWebViewDebug=true or BOPBOX_WEBVIEW_DEBUG=true) let tests drive pages over DevTools.
+    def webViewDebug = project.findProperty("bopboxWebViewDebug") ?: System.getenv("BOPBOX_WEBVIEW_DEBUG") ?: "false"
+    buildConfigField "boolean", "WEBVIEW_DEBUG", webViewDebug.toString() == "true" ? "true" : "false"
   }
   buildFeatures {
     buildConfig true
