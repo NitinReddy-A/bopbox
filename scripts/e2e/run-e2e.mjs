@@ -244,7 +244,8 @@ async function main() {
   await sleep(8000);
   screenshot('02b-home-now-playing');
   const h1 = await yt.evaluate('document.querySelector("video").currentTime');
-  check('keeps playing while on the Bopbox home screen', h1 > h0 + 4, `h0=${h0.toFixed(1)} h1=${h1.toFixed(1)}`);
+  const ctx = await yt.evaluate('location.search + " ad=" + window.__bopboxYouTubeInternals.isAd() + " paused=" + document.querySelector("video").paused');
+  check('keeps playing while on the Bopbox home screen', h1 > h0 + 4, `h0=${h0.toFixed(1)} h1=${h1.toFixed(1)} ${ctx}`);
   shell(`am start -W -a android.intent.action.VIEW -d bopbox://open/youtube ${PKG}`);
   await sleep(2000);
 
