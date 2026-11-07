@@ -77,7 +77,15 @@ async function pages() {
 }
 
 async function connect(hostMatch) {
-  const page = await waitFor(async () => (await pages()).find((p) => p.type === 'page' && p.url.includes(hostMatch)), {
+  // Match on the page's host, not the whole URL (sign-in URLs embed youtube.com in their query).
+  const hostOf = (u) => {
+    try {
+      return new URL(u).host;
+    } catch {
+      return '';
+    }
+  };
+  const page = await waitFor(async () => (await pages()).find((p) => p.type === 'page' && hostOf(p.url).endsWith(hostMatch)), {
     timeout: 60000,
     label: `page ${hostMatch}`,
   });
@@ -141,7 +149,7 @@ async function main() {
 
   // --- YouTube -------------------------------------------------------------------------------
   shell(`am start -W -a android.intent.action.VIEW -d bopbox://open/youtube ${PKG}`);
-  const yt = await connect('youtube.com');
+  let yt = await connect('youtube.com');
   await waitFor(() => yt.evaluate('document.readyState === "complete"'), { label: 'youtube load', timeout: 60000 });
   check('YouTube loads mobile site', (await yt.evaluate('location.host')) === 'm.youtube.com');
   check('bridge + youtube scripts injected', await yt.evaluate('!!window.__bopbox && !!window.__bopboxYouTube'));
@@ -150,6 +158,23 @@ async function main() {
     await yt.evaluate('!/; wv\\)/.test(navigator.userAgent) && /Chrome\\/\\d+/.test(navigator.userAgent)'),
   );
   check('background-play visibility shim active', await yt.evaluate('document.visibilityState === "visible" && document.hidden === false'));
+
+  const signIn = await waitFor(
+    () => yt.evaluate('(function(){var a=document.querySelector(".mobile-topbar-header-sign-in-button a"); return a && a.getAttribute("href");})()'),
+    { label: 'sign-in button', timeout: 20000 },
+  ).catch(() => null);
+  check('signed-out header offers a working Google sign-in', /^https:\/\/accounts\.google\.com\//.test(signIn || ''), String(signIn).slice(0, 60));
+  await yt.evaluate('document.querySelector(".mobile-topbar-header-sign-in-button a").click()');
+  await sleep(6000);
+  yt.close();
+  const login = await connect('accounts.google.com').catch(() => null);
+  check('Google sign-in opens inside the YouTube app', !!login);
+  if (login) {
+    await login.evaluate("location.href='https://m.youtube.com/'");
+    login.close();
+  }
+  yt = await connect('youtube.com');
+  await waitFor(() => yt.evaluate('document.readyState === "complete"'), { label: 'youtube reload', timeout: 60000 });
 
   // Blocked requests get an empty 200 with permissive CORS; a real cross-origin response would fail CORS.
   const adBody = await yt.evaluate(

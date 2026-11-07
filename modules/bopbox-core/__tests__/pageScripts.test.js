@@ -202,6 +202,17 @@ describe('youtube.js', () => {
     expect(video.playbackRate).toBe(1);
   });
 
+  it('turns the signed-out "Open App" button into a Google sign-in link', () => {
+    boot({ app: 'youtube', adblock: true, cosmetic: {} }, ['bridge.js', 'youtube.js']);
+    document.body.innerHTML =
+      '<div class="mobile-topbar-header-sign-in-button"><a href="intent://open" aria-label="Open App"><span>Open App</span></a></div>';
+    jest.advanceTimersByTime(1100);
+    const link = document.querySelector('a');
+    expect(link.getAttribute('href')).toMatch(/^https:\/\/accounts\.google\.com\/ServiceLogin\?service=youtube/);
+    expect(link.getAttribute('aria-label')).toBe('Sign in');
+    expect(link.textContent).toBe('Sign in');
+  });
+
   it('exposes video metadata fallbacks for the notification', () => {
     boot({ app: 'youtube', adblock: true, cosmetic: {} }, ['bridge.js', 'youtube.js']);
     window.history.pushState({}, '', '/watch?v=dQw4w9WgXcQ');

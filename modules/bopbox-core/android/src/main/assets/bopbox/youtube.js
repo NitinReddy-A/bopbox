@@ -229,6 +229,37 @@
   }, 60000);
 
   // ---------------------------------------------------------------------------------------
+  // Signed-out header shows "Open App" where "Sign in" should be. App links are blocked inside
+  // Bopbox, so turn it into a real Google sign-in that returns to m.youtube.com.
+  // ---------------------------------------------------------------------------------------
+  var SIGN_IN_URL =
+    'https://accounts.google.com/ServiceLogin?service=youtube&uilel=3&passive=true&continue=' +
+    encodeURIComponent('https://www.youtube.com/signin?action_handle_signin=true&app=m&next=' + encodeURIComponent('https://m.youtube.com/'));
+
+  function fixSignInButton() {
+    var btn = document.querySelector('.mobile-topbar-header-sign-in-button a, .mobile-topbar-header-sign-in-button button');
+    if (!btn || btn.__bopboxSignIn) return;
+    btn.__bopboxSignIn = true;
+    if (btn.tagName === 'A') btn.setAttribute('href', SIGN_IN_URL);
+    btn.setAttribute('aria-label', 'Sign in');
+    btn.addEventListener(
+      'click',
+      function (e) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        location.href = SIGN_IN_URL;
+      },
+      true,
+    );
+    var walker = document.createTreeWalker(btn, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      if (/open app/i.test(walker.currentNode.nodeValue)) walker.currentNode.nodeValue = 'Sign in';
+    }
+  }
+
+  setInterval(fixSignInButton, 1000);
+
+  // ---------------------------------------------------------------------------------------
   // Hooks for the bridge.
   // ---------------------------------------------------------------------------------------
   function text(sel) {
