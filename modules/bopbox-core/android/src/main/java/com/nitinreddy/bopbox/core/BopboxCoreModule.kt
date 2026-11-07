@@ -104,6 +104,7 @@ class BopboxCoreModule : Module() {
 
     Function("setVisibleApp") { appId: String? ->
       main.post { PipController.visibleAppId = appId }
+      WebViewPool.setVisibleApp(appId)
     }
 
     Function("enterPip") {

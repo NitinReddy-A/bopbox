@@ -68,12 +68,27 @@ object WebViewPool {
   var inBackground: Boolean = false
     private set
 
+  /** App currently on screen inside Bopbox (null on home/settings). Others count as background. */
+  @Volatile
+  var visibleAppId: String? = null
+    private set
+
   fun setBackground(background: Boolean) {
     main.post {
       inBackground = background
       views.values.forEach { it.syncBackground() }
     }
   }
+
+  fun setVisibleApp(appId: String?) {
+    main.post {
+      visibleAppId = appId
+      views.values.forEach { it.syncBackground() }
+    }
+  }
+
+  /** Whether [appId]'s page should be protected from pausing itself (not on screen). */
+  fun isHidden(appId: String): Boolean = inBackground || visibleAppId != appId
 
   fun command(appId: String, cmd: MediaCommand, arg: Double? = null) {
     main.post { views[appId]?.command(cmd, arg) }

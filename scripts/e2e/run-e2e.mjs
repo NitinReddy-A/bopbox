@@ -196,6 +196,16 @@ async function main() {
   await sleep(3000);
   check('system play command resumes the video', await yt.evaluate('!document.querySelector("video").paused'));
 
+  // --- switching to Bopbox's own home keeps the music going ------------------------------------
+  const h0 = await yt.evaluate('document.querySelector("video").currentTime');
+  shell(`am start -W -a android.intent.action.VIEW -d bopbox://open/home ${PKG}`);
+  await sleep(8000);
+  screenshot('02b-home-now-playing');
+  const h1 = await yt.evaluate('document.querySelector("video").currentTime');
+  check('keeps playing while on the Bopbox home screen', h1 > h0 + 4, `h0=${h0.toFixed(1)} h1=${h1.toFixed(1)}`);
+  shell(`am start -W -a android.intent.action.VIEW -d bopbox://open/youtube ${PKG}`);
+  await sleep(2000);
+
   // --- background + PiP ----------------------------------------------------------------------
   const t0 = await yt.evaluate('document.querySelector("video").currentTime');
   shell('input keyevent KEYCODE_HOME');

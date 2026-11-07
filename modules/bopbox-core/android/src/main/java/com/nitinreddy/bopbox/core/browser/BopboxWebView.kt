@@ -221,9 +221,9 @@ class BopboxWebView(
     evaluateJavascript(PageScripts.command(cmd.js, arg), null)
   }
 
-  /** Tell the page whether the app is in the background (see bridge.js background guard). */
+  /** Tell the page whether it is off screen (see the background guard in bridge.js). */
   fun syncBackground() {
-    evaluateJavascript(PageScripts.command("background", if (WebViewPool.inBackground) 1.0 else 0.0), null)
+    evaluateJavascript(PageScripts.command("background", if (WebViewPool.isHidden(app.id)) 1.0 else 0.0), null)
   }
 
   fun setPictureInPicture(enabled: Boolean) {
@@ -288,7 +288,7 @@ class BopboxWebView(
 
     override fun onPageFinished(view: WebView, url: String) {
       loading = false
-      if (WebViewPool.inBackground) syncBackground()
+      syncBackground()
       CookieManager.getInstance().flush()
       emitNav()
     }
