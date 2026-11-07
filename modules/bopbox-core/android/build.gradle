@@ -1,0 +1,38 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.nitinreddy.bopbox.core'
+version = '1.0.0'
+
+android {
+  namespace "com.nitinreddy.bopbox.core"
+  defaultConfig {
+    versionCode 1
+    versionName "1.0.0"
+    // E2E builds pass -PbopboxWebViewDebug=true so tests can drive pages over DevTools.
+    buildConfigField "boolean", "WEBVIEW_DEBUG", (project.findProperty("bopboxWebViewDebug") ?: "false").toString()
+  }
+  buildFeatures {
+    buildConfig true
+  }
+  lintOptions {
+    abortOnError false
+  }
+  testOptions {
+    unitTests.returnDefaultValues = true
+  }
+}
+
+dependencies {
+  implementation "androidx.core:core-ktx:1.17.0"
+  implementation "androidx.activity:activity-ktx:1.11.0"
+  implementation "androidx.webkit:webkit:1.18.0"
+  implementation "androidx.media3:media3-session:1.11.1"
+  implementation "androidx.media3:media3-common:1.11.1"
+  implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2"
+
+  testImplementation "junit:junit:4.13.2"
+  testImplementation "org.json:json:20250517"
+}

@@ -1,0 +1,9 @@
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+  <item>
+    <shape android:shape="rectangle">
+      <gradient android:angle="45" android:startColor="#FFFF4FD8" android:endColor="#FF6B4BFF"/>
+      <corners android:radius="18dp"/>
+    </shape>
+  </item>
+  <item android:gravity="center" android:width="40dp" android:height="40dp" android:drawable="@drawable/bopbox_ic_notification"/>
+</layer-list>

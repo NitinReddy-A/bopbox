@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="bopbox_artwork">Artwork</string>
+    <string name="bopbox_widget_kicker">BOPBOX • NOW BOPPING</string>
+    <string name="bopbox_nothing_playing">Nothing\'s bopping</string>
+    <string name="bopbox_previous">Previous</string>
+    <string name="bopbox_next">Next</string>
+    <string name="bopbox_play_pause">Play or pause</string>
+    <string name="bopbox_youtube">YouTube</string>
+    <string name="bopbox_spotify">Spotify</string>
+    <string name="bopbox_search">Search</string>
+    <string name="bopbox_home">Home</string>
+    <string name="bopbox_widget_now_playing_name">Bopbox Player</string>
+    <string name="bopbox_widget_mini_name">Bopbox Mini</string>
+    <string name="bopbox_widget_quick_name">Bopbox Quick Access</string>
+    <string name="bopbox_widget_now_playing_desc">Artwork, track info and controls for whatever\'s playing</string>
+    <string name="bopbox_widget_mini_desc">One-row mini player</string>
+    <string name="bopbox_widget_quick_desc">Jump straight into YouTube, Spotify or search</string>
+</resources>

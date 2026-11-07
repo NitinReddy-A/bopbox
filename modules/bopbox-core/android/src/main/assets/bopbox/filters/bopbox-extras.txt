@@ -1,0 +1,73 @@
+[Adblock Plus 2.0]
+! Title: Bopbox extras
+! Description: Small hand-curated additions for m.youtube.com and open.spotify.com.
+! Policy: be conservative. Never block playback-critical endpoints:
+!   - *.googlevideo.com/videoplayback, m.youtube.com/youtubei/v1/player|next|browse, i.ytimg.com
+!   - open.spotify.com documents, spclient.wg.spotify.com track/playback/metadata endpoints,
+!     audio CDNs (audio*-ak-spotify-com.akamaized.net, audio-fa.scdn.co, *.scdn.co)
+! A broken player is worse than an ad. Each rule below is commented with its purpose.
+!
+! ======================== Google ad serving (used by YouTube and Spotify web) ========================
+! DoubleClick ad requests / ID sync from YouTube and display ads.
+||googleads.g.doubleclick.net^
+! AdSense / ad library host (adsbygoogle.js, pagead/js/...).
+||pagead2.googlesyndication.com^
+! Google Publisher Tag ad servers (Spotify web display ads use GPT).
+||pubads.g.doubleclick.net^
+||securepubads.g.doubleclick.net^
+! Ad conversion / view-through tracking.
+||ad.doubleclick.net^
+||stats.g.doubleclick.net^
+!
+! ======================== YouTube (m.youtube.com / www.youtube.com) ========================
+! Ad impression reporting endpoint (no effect on content playback).
+||youtube.com/api/stats/ads
+! Legacy ad-serving and ad-tracking paths.
+||youtube.com/pagead/
+||youtube.com/ptracking
+||youtube.com/get_midroll_
+||youtube.com/pcs/activeview
+||youtube.com/ad_data_204
+||youtube.com/youtubei/v1/player/ad_break
+! Ad-specific "doubleclick-style" conversion pings served from youtube.com.
+||youtube.com/pagead/conversion/
+!
+! ======================== Spotify (open.spotify.com) ========================
+! Ad decisioning / ad metadata on the spclient API host (track & playback paths are untouched).
+||spclient.wg.spotify.com/ads/
+||spclient.wg.spotify.com/ad-logic/
+! Desktop-client update checks; never needed by the web player.
+||spclient.wg.spotify.com/desktop-update/
+! Ad event / impression tracker.
+||adeventtracker.spotify.com^
+! Marketing analytics and tracking pixels (not used for playback).
+||analytics.spotify.com^
+||pixel.spotify.com^
+||pixel-static.spotify.com^
+!
+! ======================== Cosmetic: YouTube mobile web ========================
+! Promoted video cards in feed and search.
+m.youtube.com##ytm-promoted-sparkles-web-renderer
+m.youtube.com##ytm-promoted-sparkles-text-search-renderer
+m.youtube.com##ytm-promoted-video-renderer
+! Generic ad slot container (home feed, watch-next).
+m.youtube.com##ad-slot-renderer
+m.youtube.com##ytm-rich-item-renderer:has(> ad-slot-renderer)
+! Companion (side/below player) ads.
+m.youtube.com##ytm-companion-ad-renderer
+m.youtube.com##ytm-companion-slot
+! "Try YouTube Premium" style bottom promo bar.
+m.youtube.com##ytm-mealbar-promo-renderer
+! Banner overlay ads drawn on top of the video (not the player itself).
+m.youtube.com##.ytp-ad-overlay-container
+!
+! ======================== Cosmetic: Spotify web ========================
+! Upsell / premium banners and ad cards. Names may drift; rules are harmless if absent.
+open.spotify.com##[data-testid="upsell-banner"]
+open.spotify.com##[data-testid="ad-companion-card"]
+open.spotify.com##[data-testid="hpto-banner"]
+open.spotify.com##[data-testid="embedded-ad"]
+!
+! ======================== Scriptlets (indexed only, NOT executed by Bopbox yet) ========================
+! uBO-style JSON pruning of ad placements in YouTube player responses.
+youtube.com##+js(json-prune, playerResponse.adPlacements playerResponse.playerAds playerResponse.adSlots adPlacements playerAds adSlots)

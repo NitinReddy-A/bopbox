@@ -1,0 +1,60 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application>
+        <service
+            android:name="com.nitinreddy.bopbox.core.media.PlaybackService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+
+        <receiver
+            android:name="com.nitinreddy.bopbox.core.widgets.NowPlayingWidgetProvider"
+            android:exported="true"
+            android:label="@string/bopbox_widget_now_playing_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/bopbox_widget_now_playing_info" />
+        </receiver>
+
+        <receiver
+            android:name="com.nitinreddy.bopbox.core.widgets.MiniPlayerWidgetProvider"
+            android:exported="true"
+            android:label="@string/bopbox_widget_mini_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/bopbox_widget_mini_info" />
+        </receiver>
+
+        <receiver
+            android:name="com.nitinreddy.bopbox.core.widgets.QuickAccessWidgetProvider"
+            android:exported="true"
+            android:label="@string/bopbox_widget_quick_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/bopbox_widget_quick_info" />
+        </receiver>
+
+        <receiver
+            android:name="com.nitinreddy.bopbox.core.widgets.WidgetActionReceiver"
+            android:exported="false" />
+    </application>
+</manifest>

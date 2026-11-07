@@ -39,3 +39,12 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Bopbox
+e2e-artifacts/
+*.apk
+*.aab
+android/local.properties
+modules/*/android/build/
+modules/*/android/.gradle/
+.claude/settings.local.json

@@ -1,25 +1,42 @@
 {
   "expo": {
-    "name": "bopbox-tmp",
-    "slug": "bopbox-tmp",
+    "name": "Bopbox",
+    "slug": "personal-bopbox",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "scheme": "bopbox",
+    "orientation": "default",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
-    "ios": {
-      "supportsTablet": true
-    },
+    "userInterfaceStyle": "automatic",
+    "backgroundColor": "#0B0B12",
+    "platforms": ["android"],
     "android": {
+      "package": "com.nitinreddy.bopbox",
+      "versionCode": 1,
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0B0B12",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.WAKE_LOCK",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ]
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
+    "plugins": [
+      "expo-router",
+      "./plugins/withBopbox"
+    ],
+    "experiments": {
+      "typedRoutes": true
     }
   }
 }
