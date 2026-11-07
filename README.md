@@ -77,8 +77,8 @@ scripts/                  icon generator, e2e helpers
 
 ## Install
 
-Grab the APK from the latest [GitHub release](https://github.com/NitinReddy-A/bopbox/releases), open it on your
-phone (allow "Install unknown apps" for your browser/files app), then:
+Build the APK (see below) or grab a prebuilt one, open it on your phone (allow "Install unknown
+apps" for your browser/files app), then:
 
 1. Allow notifications when asked (media controls live there).
 2. Open YouTube or Spotify from the home screen and sign in once — cookies persist.
