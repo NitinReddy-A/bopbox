@@ -79,6 +79,22 @@
     );
   }
 
+  // Some upsell buttons carry no attributes at all, so match them by their label instead.
+  var UPSELL_LABELS = /^(premium|explore premium|upgrade|try premium|download|install app)$/i;
+
+  function hideUpsellButtons() {
+    var nav = q('[data-testid="global-nav-bar"]');
+    if (!nav) return;
+    var items = nav.querySelectorAll('a, button');
+    for (var i = 0; i < items.length; i++) {
+      var el = items[i];
+      if (!el.__bopboxChecked && UPSELL_LABELS.test((el.textContent || '').trim())) el.style.setProperty('display', 'none', 'important');
+      el.__bopboxChecked = true;
+    }
+  }
+
+  if (cfg.adblock) setInterval(hideUpsellButtons, 1500);
+
   // ---------------------------------------------------------------------------------------
   // Audio ads: detect, mute, skip.
   // ---------------------------------------------------------------------------------------

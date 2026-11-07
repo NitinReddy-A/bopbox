@@ -37,6 +37,8 @@ object PipController {
 
   private val modeListener = Consumer<PictureInPictureModeChangedInfo> { info ->
     isInPip = info.isInPictureInPictureMode
+    // A PiP window is "background" for page scripts: sites must not pause themselves there.
+    WebViewPool.setBackground(isInPip)
     visibleAppId?.let { WebViewPool.peek(it)?.setPictureInPicture(isInPip) }
     listeners.forEach { it(isInPip) }
   }

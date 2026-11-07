@@ -16,7 +16,7 @@ import path from 'node:path';
 const PKG = 'com.nitinreddy.bopbox';
 const ADB = process.env.ADB || path.join(process.env.ANDROID_HOME || path.join(process.env.USERPROFILE || '', 'Android', 'Sdk'), 'platform-tools', 'adb');
 const PORT = 9333;
-const VIDEO_ID = process.env.E2E_VIDEO || 'jNQXAC9IVRw'; // "Me at the zoo": short, always available
+const VIDEO_ID = process.env.E2E_VIDEO || 'dQw4w9WgXcQ'; // long enough (3.5 min) for the background checks
 const OUT = path.join(process.cwd(), 'e2e-artifacts');
 
 const results = [];
@@ -111,8 +111,11 @@ async function connect(hostMatch) {
 
 function mediaSessionState() {
   const dump = shell('dumpsys media_session');
-  const block = dump.split(/\n(?=\s{4}\S)/).find((b) => b.includes(PKG)) || '';
-  const m = block.match(/state=PlaybackState \{state=(\w+)/) || block.match(/state=(\d+)/);
+  // The session record (not the "Media button session is ..." header) has package= then state=.
+  const start = dump.indexOf(`package=${PKG}`);
+  if (start < 0) return { block: '', state: null };
+  const block = dump.slice(start, start + 2000);
+  const m = block.match(/state=PlaybackState \{state=([A-Z_]+|\d+)/);
   return { block, state: m ? m[1] : null };
 }
 

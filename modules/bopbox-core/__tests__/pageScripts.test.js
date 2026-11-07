@@ -104,6 +104,25 @@ describe('bridge.js', () => {
     expect(video.currentTime).toBe(42);
   });
 
+  it('ignores page-initiated pauses in the background but honours user pauses', async () => {
+    boot({ app: 'youtube', backgroundPlay: true, cosmetic: {} }, ['bridge.js']);
+    const video = document.createElement('video');
+    document.body.appendChild(video);
+    await video.play();
+
+    window.__bopbox.command('background', 1);
+    video.pause(); // e.g. YouTube's "background play is Premium" pause
+    expect(video.paused).toBe(false);
+
+    window.__bopbox.command('pause'); // user tapped pause on the notification
+    expect(video.paused).toBe(true);
+
+    await video.play();
+    window.__bopbox.command('background', 0);
+    video.pause(); // foreground: the page is in charge again
+    expect(video.paused).toBe(true);
+  });
+
   it('toggles the PiP presentation class', () => {
     boot({ app: 'youtube', backgroundPlay: true, cosmetic: {} }, ['bridge.js']);
     window.__bopbox.command('pip', 1);
@@ -225,6 +244,16 @@ describe('spotify.js', () => {
     const snap = window.__bopbox._snapshot();
     expect(snap).toMatchObject({ title: 'Instant Crush', artist: 'Daft Punk', artwork: 'https://i.scdn.co/image/abc' });
     expect(snap.actions).toContain('nexttrack');
+  });
+
+  it('hides attribute-less upsell buttons in the nav bar but keeps the rest', () => {
+    boot({ app: 'spotify', adblock: true, desktop: true, cosmetic: {} }, ['bridge.js', 'spotify.js']);
+    document.body.innerHTML =
+      '<div data-testid="global-nav-bar"><button id="p">Premium</button><button id="d">Download</button><button id="l">Log in</button></div>';
+    jest.advanceTimersByTime(1600);
+    expect(document.getElementById('p').style.display).toBe('none');
+    expect(document.getElementById('d').style.display).toBe('none');
+    expect(document.getElementById('l').style.display).toBe('');
   });
 
   it('sets a zoomed-out viewport for the desktop player', () => {

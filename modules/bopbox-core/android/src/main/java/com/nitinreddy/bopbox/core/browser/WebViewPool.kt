@@ -63,6 +63,18 @@ object WebViewPool {
     if (::appContext.isInitialized) view.setBaseContext(appContext)
   }
 
+  /** True while Bopbox is not in the foreground (backgrounded, screen off or shrunk into PiP). */
+  @Volatile
+  var inBackground: Boolean = false
+    private set
+
+  fun setBackground(background: Boolean) {
+    main.post {
+      inBackground = background
+      views.values.forEach { it.syncBackground() }
+    }
+  }
+
   fun command(appId: String, cmd: MediaCommand, arg: Double? = null) {
     main.post { views[appId]?.command(cmd, arg) }
   }

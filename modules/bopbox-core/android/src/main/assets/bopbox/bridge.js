@@ -162,6 +162,24 @@
     });
   }
 
+  // ---------------------------------------------------------------------------------------
+  // 3b. Background guard. Some sites (YouTube) pause themselves once the app is backgrounded
+  //     or shrunk into PiP. While native says we're in the background, page-initiated pause()
+  //     calls are ignored; pauses the user asked for (notification, headset, PiP controls) come
+  //     through command('pause'), which opens a short allow window first. System pauses
+  //     (calls, other audio apps) don't go through pause() and are unaffected.
+  // ---------------------------------------------------------------------------------------
+  var inBackground = false;
+  var allowPauseUntil = 0;
+  var nativePause = HTMLMediaElement.prototype.pause;
+  HTMLMediaElement.prototype.pause = function () {
+    if (cfg.backgroundPlay && inBackground && Date.now() > allowPauseUntil && !this.ended) {
+      log('ignored a page-initiated pause while in background');
+      return undefined;
+    }
+    return nativePause.apply(this, arguments);
+  };
+
   var nativePlay = HTMLMediaElement.prototype.play;
   HTMLMediaElement.prototype.play = function () {
     track(this);
@@ -263,7 +281,11 @@
         if (!callHandler('play') && el) el.play().catch(function () {});
         break;
       case 'pause':
+        allowPauseUntil = Date.now() + 2500;
         if (!callHandler('pause') && el) el.pause();
+        break;
+      case 'background':
+        inBackground = !!arg;
         break;
       case 'next':
         if (!callHandler('nexttrack') && site.next) site.next();

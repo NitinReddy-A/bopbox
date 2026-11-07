@@ -62,9 +62,14 @@ class BopboxCoreModule : Module() {
     }
 
     OnActivityEntersForeground {
+      WebViewPool.setBackground(false)
       (appContext.currentActivity as? ComponentActivity)?.let { activity ->
         main.post { PipController.attach(activity) }
       }
+    }
+
+    OnActivityEntersBackground {
+      WebViewPool.setBackground(true)
     }
 
     Function("getApps") {
