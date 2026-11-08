@@ -240,9 +240,10 @@ async function main() {
   // --- background + PiP ----------------------------------------------------------------------
   const t0 = await yt.evaluate('document.querySelector("video").currentTime');
   shell('input keyevent KEYCODE_HOME');
-  await sleep(4000);
-  const activities = shell('dumpsys activity activities');
-  const inPip = /mode=pinned|windowingMode=pinned|WINDOWING_MODE_PINNED/i.test(activities.split('\n').filter((l) => l.includes(PKG) || /pinned/i.test(l)).join('\n'));
+  const inPip = await waitFor(() => /mode=pinned|windowingMode=pinned|WINDOWING_MODE_PINNED/i.test(shell('dumpsys activity activities')), {
+    label: 'picture-in-picture',
+    timeout: 10000,
+  }).catch(() => false);
   check('YouTube enters Picture-in-Picture on HOME', inPip);
   screenshot('03-pip');
   await sleep(12000);
