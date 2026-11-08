@@ -295,12 +295,16 @@ describe('youtube.js player features', () => {
 
   it('puts a Settings button in YouTube’s top bar that asks native to open Settings', () => {
     const posted = boot({ app: 'youtube', adblock: true, cosmetic: {} }, ['bridge.js', 'youtube.js']);
+    // The header layout YouTube currently serves: buttons are direct children of <header>.
     document.body.innerHTML =
-      '<div class="mobile-topbar-header-content"><ytm-topbar-menu-button-renderer><button aria-label="Search YouTube"></button></ytm-topbar-menu-button-renderer></div>';
+      '<ytm-mobile-topbar-renderer><header class="mobile-topbar-header"><ytm-home-logo></ytm-home-logo>' +
+      '<div class="mobile-topbar-header-content"></div><button class="topbar-button-search-button" aria-label="Search YouTube"></button>' +
+      '<button aria-label="More options"></button></header></ytm-mobile-topbar-renderer>';
     jest.advanceTimersByTime(900);
     const btn = document.getElementById('bopbox-settings');
     expect(btn).not.toBeNull();
-    expect(btn.nextElementSibling.tagName.toLowerCase()).toBe('ytm-topbar-menu-button-renderer');
+    expect(btn.nextElementSibling.getAttribute('aria-label')).toBe('Search YouTube');
+    expect(btn.querySelector('svg')).not.toBeNull();
     btn.click();
     expect(posted).toContainEqual({ t: 'openSettings' });
     jest.advanceTimersByTime(900);

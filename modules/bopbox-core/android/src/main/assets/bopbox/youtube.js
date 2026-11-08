@@ -395,18 +395,41 @@
   // ---------------------------------------------------------------------------------------
   // The app's own Settings, reachable from YouTube's top bar like a built-in control.
   // ---------------------------------------------------------------------------------------
-  var SETTINGS_ICON =
-    '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">' +
-    '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></svg>';
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+
+  /** Built with DOM calls: YouTube enforces Trusted Types, so innerHTML strings would throw. */
+  function settingsIcon() {
+    var svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', '24');
+    svg.setAttribute('height', '24');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '1.8');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('aria-hidden', 'true');
+    var path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('d', 'M4 7h9M17 7h3M4 17h3M11 17h9');
+    svg.appendChild(path);
+    [[15, 7], [9, 17]].forEach(function (c) {
+      var circle = document.createElementNS(SVG_NS, 'circle');
+      circle.setAttribute('cx', String(c[0]));
+      circle.setAttribute('cy', String(c[1]));
+      circle.setAttribute('r', '2.2');
+      svg.appendChild(circle);
+    });
+    return svg;
+  }
 
   function injectSettingsButton() {
-    var bar = document.querySelector('.mobile-topbar-header-content');
-    if (!bar || bar.querySelector('#bopbox-settings')) return;
+    if (document.getElementById('bopbox-settings')) return;
+    var header = document.querySelector('ytm-mobile-topbar-renderer header, header.mobile-topbar-header');
+    if (!header) return;
     var btn = document.createElement('button');
     btn.id = 'bopbox-settings';
     btn.type = 'button';
     btn.setAttribute('aria-label', 'Tube settings');
-    btn.innerHTML = SETTINGS_ICON;
+    btn.appendChild(settingsIcon());
     btn.style.cssText =
       'background:transparent;border:0;color:inherit;width:40px;height:40px;padding:8px;margin:0 2px;' +
       'display:inline-flex;align-items:center;justify-content:center;border-radius:50%;flex-shrink:0;-webkit-tap-highlight-color:transparent';
@@ -415,11 +438,11 @@
       e.stopPropagation();
       B.post({ t: 'openSettings' });
     });
-    var anchor = bar.querySelector('button[aria-label*="Search" i]');
-    var host = anchor && anchor.closest('ytm-topbar-menu-button-renderer');
-    var before = host && host.parentNode === bar ? host : anchor && anchor.parentNode === bar ? anchor : null;
-    if (before) bar.insertBefore(btn, before);
-    else bar.appendChild(btn);
+    // YouTube A/B-tests its header: put the button just before its search button, wherever that is.
+    var search = header.querySelector('button[aria-label="Search YouTube"], button.topbar-button-search-button, button[aria-label*="Search" i]');
+    var host = search && (search.closest('ytm-topbar-menu-button-renderer') || search);
+    if (host && host.parentNode) host.parentNode.insertBefore(btn, host);
+    else header.appendChild(btn);
   }
 
   setInterval(injectSettingsButton, 800);
