@@ -11,17 +11,15 @@ function perform(decision: BackDecision, shell: ShellApi): void {
     case 'closeSettings':
       return shell.closeSettings();
     case 'exitFullscreen':
-      return shell.run(decision.app, (b) => b.exitFullscreen());
+      return shell.run((b) => b.exitFullscreen());
     case 'goBack':
-      return shell.run(decision.app, (b) => b.goBack());
-    case 'goHome':
-      return shell.goHome();
+      return shell.run((b) => b.goBack());
     case 'moveToBackground':
       return BopboxCore.moveToBackground();
   }
 }
 
-/** Hardware back is always consumed: the app never finishes itself, music must keep playing. */
+/** Hardware back is always consumed: the app never finishes itself, playback must survive. */
 export function useBackHandler(state: ShellState): void {
   const shell = useShell();
   const latest = useRef(state);

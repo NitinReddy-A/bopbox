@@ -56,28 +56,7 @@ object AppCatalog {
     supportsPip = true,
   )
 
-  val SPOTIFY = AppSpec(
-    id = "spotify",
-    displayName = "Spotify",
-    homeUrl = "https://open.spotify.com/",
-    internalHosts = listOf(
-      "spotify.com",
-      "spotifycdn.com",
-      "scdn.co",
-      "spotify.link",
-      "appleid.apple.com",
-      "facebook.com",
-      "m.facebook.com",
-    ) + authHosts,
-    // Spotify only offers playback in its desktop web player; mobile UA gets an "open the app" wall.
-    defaultMode = SiteMode.DESKTOP,
-    scripts = listOf("bridge.js", "spotify.js"),
-    searchUrl = { q -> "https://open.spotify.com/search/" + UrlUtils.encodePath(q) },
-    needsDrm = true,
-    supportsPip = false,
-  )
-
-  val all: List<AppSpec> = listOf(YOUTUBE, SPOTIFY)
+  val all: List<AppSpec> = listOf(YOUTUBE)
 
   fun byId(id: String): AppSpec? = all.firstOrNull { it.id == id }
 
@@ -88,7 +67,6 @@ object AppCatalog {
     val host = UrlUtils.hostOf(url) ?: return null
     return when {
       UrlUtils.hostMatches(host, "youtube.com") || UrlUtils.hostMatches(host, "youtu.be") -> YOUTUBE
-      UrlUtils.hostMatches(host, "spotify.com") || UrlUtils.hostMatches(host, "spotify.link") -> SPOTIFY
       else -> null
     }
   }

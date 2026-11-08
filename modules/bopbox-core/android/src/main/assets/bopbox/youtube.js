@@ -164,6 +164,7 @@
       v.muted = adMuted.muted;
       v.playbackRate = adMuted.rate === 16 ? 1 : adMuted.rate || 1;
       adMuted = null;
+      tuned = null; // the real video starts now: apply speed and quality to it
     }
   }
 
@@ -219,7 +220,9 @@
     }
   }
 
-  if (cfg.sponsorBlock) setInterval(tickSponsors, 500);
+  setInterval(function () {
+    if (cfg.sponsorBlock) tickSponsors();
+  }, 500);
 
   // ---------------------------------------------------------------------------------------
   // Keep "Video paused. Continue watching?" away during long background sessions.
@@ -259,6 +262,168 @@
 
   setInterval(fixSignInButton, 1000);
 
+
+  // ---------------------------------------------------------------------------------------
+  // Player preferences, applied once per video: speed, quality, always repeat.
+  // ---------------------------------------------------------------------------------------
+  var QUALITY_LABELS = { 2160: 'hd2160', 1440: 'hd1440', 1080: 'hd1080', 720: 'hd720', 480: 'large', 360: 'medium', 240: 'small', 144: 'tiny' };
+  var QUALITY_ORDER = ['hd2160', 'hd1440', 'hd1080', 'hd720', 'large', 'medium', 'small', 'tiny'];
+  var tuned = null;
+
+  /** Best available level at or below the wanted one. */
+  function pickQuality(wanted, available) {
+    var want = QUALITY_LABELS[wanted];
+    if (!want || !available || !available.length) return null;
+    for (var i = QUALITY_ORDER.indexOf(want); i < QUALITY_ORDER.length; i++) {
+      if (available.indexOf(QUALITY_ORDER[i]) !== -1) return QUALITY_ORDER[i];
+    }
+    return null;
+  }
+
+  function tunePlayer() {
+    var p = player();
+    var v = p && p.querySelector('video');
+    var id = currentVideoId();
+    if (!v || !id || isAd() || !isFinite(v.duration) || v.duration <= 0) return;
+    v.loop = !!cfg.alwaysRepeat;
+    if (tuned === id) return;
+    tuned = id;
+    var speed = Number(cfg.defaultSpeed) || 1;
+    if (speed !== 1) {
+      try {
+        if (p.setPlaybackRate && speed <= 2) p.setPlaybackRate(speed);
+      } catch (e) {}
+      v.playbackRate = speed;
+    }
+    if (cfg.defaultQuality && cfg.defaultQuality !== 'auto' && p.getAvailableQualityLevels) {
+      var q = pickQuality(Number(cfg.defaultQuality), p.getAvailableQualityLevels());
+      if (q) {
+        try {
+          if (p.setPlaybackQualityRange) p.setPlaybackQualityRange(q, q);
+          if (p.setPlaybackQuality) p.setPlaybackQuality(q);
+        } catch (e) {}
+      }
+    }
+  }
+
+  setInterval(tunePlayer, 500);
+
+  // ---------------------------------------------------------------------------------------
+  // Return YouTube Dislike: the public count, shown on the dislike button.
+  // ---------------------------------------------------------------------------------------
+  var dislikes = { id: null, count: null };
+  var compact =
+    typeof Intl !== 'undefined' && Intl.NumberFormat
+      ? new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 })
+      : { format: String };
+
+  function dislikeButton() {
+    var buttons = document.querySelectorAll('button[aria-label]');
+    for (var i = 0; i < buttons.length; i++) {
+      if (/dislike/i.test(buttons[i].getAttribute('aria-label'))) return buttons[i];
+    }
+    return null;
+  }
+
+  function tickDislikes() {
+    var id = currentVideoId();
+    var old = document.querySelector('.bopbox-dislikes');
+    if (!cfg.returnDislike || !id) {
+      if (old) old.remove();
+      return;
+    }
+    if (dislikes.id !== id) {
+      dislikes = { id: id, count: null };
+      if (old) old.remove();
+      if (window.fetch) {
+        fetch('https://returnyoutubedislikeapi.com/votes?videoId=' + id)
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (d) {
+            if (d && dislikes.id === id && typeof d.dislikes === 'number') dislikes.count = d.dislikes;
+          })
+          .catch(function () {});
+      }
+      return;
+    }
+    if (dislikes.count === null) return;
+    var btn = dislikeButton();
+    if (!btn) return;
+    var label = btn.querySelector('.bopbox-dislikes');
+    var text = compact.format(dislikes.count);
+    if (!label) {
+      label = document.createElement('span');
+      label.className = 'bopbox-dislikes';
+      btn.appendChild(label);
+    }
+    if (label.textContent !== text) label.textContent = text;
+  }
+
+  setInterval(tickDislikes, 700);
+
+  // ---------------------------------------------------------------------------------------
+  // Feed and player clean-up, switched live by classes on <html>.
+  // ---------------------------------------------------------------------------------------
+  B.addStyle(
+    '.bopbox-dislikes{margin-left:6px;font:inherit;font-size:14px;font-weight:500;white-space:nowrap}\n' +
+      'html.bopbox-hide-shorts ' +
+      B.hideRule([
+        'ytm-reel-shelf-renderer',
+        'ytm-shorts-lockup-view-model',
+        'ytm-shorts-lockup-view-model-v2',
+        'ytm-rich-section-renderer:has(ytm-reel-shelf-renderer)',
+        'ytm-rich-section-renderer:has(ytm-shorts-lockup-view-model)',
+        'ytm-rich-section-renderer:has(ytm-shorts-lockup-view-model-v2)',
+        'ytm-video-with-context-renderer:has(a[href^="/shorts/"])',
+        'ytm-rich-item-renderer:has(a[href^="/shorts/"])',
+        'ytm-pivot-bar-item-renderer:has(.pivot-shorts)',
+      ]) +
+      '\nhtml.bopbox-hide-cards ' +
+      B.hideRule(['.ytp-ce-element', '.ytp-cards-teaser', '.ytp-cards-button', '.ytp-pause-overlay', '.ytp-suggested-action', '.iv-branding']),
+    'bopbox-youtube-prefs',
+  );
+
+  function syncClasses() {
+    B.onRoot(function (root) {
+      root.classList.toggle('bopbox-hide-shorts', !!cfg.hideShorts);
+      root.classList.toggle('bopbox-hide-cards', !!cfg.hideCards);
+    });
+  }
+
+  syncClasses();
+  setInterval(syncClasses, 1000);
+
+  // ---------------------------------------------------------------------------------------
+  // The app's own Settings, reachable from YouTube's top bar like a built-in control.
+  // ---------------------------------------------------------------------------------------
+  var SETTINGS_ICON =
+    '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">' +
+    '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></svg>';
+
+  function injectSettingsButton() {
+    var bar = document.querySelector('.mobile-topbar-header-content');
+    if (!bar || bar.querySelector('#bopbox-settings')) return;
+    var btn = document.createElement('button');
+    btn.id = 'bopbox-settings';
+    btn.type = 'button';
+    btn.setAttribute('aria-label', 'Tube settings');
+    btn.innerHTML = SETTINGS_ICON;
+    btn.style.cssText =
+      'background:transparent;border:0;color:inherit;width:40px;height:40px;padding:8px;margin:0 2px;' +
+      'display:inline-flex;align-items:center;justify-content:center;border-radius:50%;flex-shrink:0;-webkit-tap-highlight-color:transparent';
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      B.post({ t: 'openSettings' });
+    });
+    var anchor = bar.querySelector('button[aria-label*="Search" i]');
+    var host = anchor && anchor.closest('ytm-topbar-menu-button-renderer');
+    var before = host && host.parentNode === bar ? host : anchor && anchor.parentNode === bar ? anchor : null;
+    if (before) bar.insertBefore(btn, before);
+    else bar.appendChild(btn);
+  }
+
+  setInterval(injectSettingsButton, 800);
+
   // ---------------------------------------------------------------------------------------
   // Hooks for the bridge.
   // ---------------------------------------------------------------------------------------
@@ -293,5 +458,5 @@
   });
 
   window.__bopboxYouTubeStats = stats;
-  window.__bopboxYouTubeInternals = { prune: prune, isAd: isAd };
+  window.__bopboxYouTubeInternals = { prune: prune, isAd: isAd, pickQuality: pickQuality };
 })();

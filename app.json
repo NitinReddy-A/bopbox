@@ -1,21 +1,21 @@
 {
   "expo": {
-    "name": "Bopbox",
+    "name": "Tube",
     "slug": "personal-bopbox",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "scheme": "bopbox",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "backgroundColor": "#0B0B12",
+    "backgroundColor": "#0F0F0F",
     "platforms": [
       "android"
     ],
     "android": {
-      "package": "com.nitinreddy.bopbox",
+      "package": "com.nitinreddy.tube",
       "versionCode": 1,
       "adaptiveIcon": {
-        "backgroundColor": "#0B0B12",
+        "backgroundColor": "#E5002B",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -35,7 +35,33 @@
     },
     "plugins": [
       "expo-router",
-      "./plugins/withBopbox"
+      "./plugins/withBopbox",
+      [
+        "expo-font",
+        {
+          "android": {
+            "fonts": [
+              {
+                "fontFamily": "Inter",
+                "fontDefinitions": [
+                  {
+                    "path": "./assets/fonts/Inter-Regular.ttf",
+                    "weight": 400
+                  },
+                  {
+                    "path": "./assets/fonts/Inter-SemiBold.ttf",
+                    "weight": 600
+                  },
+                  {
+                    "path": "./assets/fonts/Inter-Bold.ttf",
+                    "weight": 700
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

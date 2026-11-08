@@ -1,47 +1,41 @@
-import type { AppId } from '@bopbox/core';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { PressableScale } from '@/components/common/PressableScale';
-import { APPS } from '@/lib/apps';
+import { Icon } from '@/components/icons/Icon';
 import type { LoadError } from '@/shell/shellReducer';
 import { useTheme } from '@/theme/ThemeProvider';
-import { radius, space, type as typo } from '@/theme/tokens';
+import { space, type as typo } from '@/theme/tokens';
 
 type Props = {
-  app: AppId;
   error: LoadError;
   onRetry: () => void;
-  onHome: () => void;
 };
 
-export function LoadErrorOverlay({ app, error, onRetry, onHome }: Props) {
+/** What failed, why if we know, and the one thing to do about it. */
+export function LoadErrorOverlay({ error, onRetry }: Props) {
   const t = useTheme();
   return (
-    <View style={[StyleSheet.absoluteFill, styles.root, { backgroundColor: t.bg }]} testID={`load-error-${app}`}>
-      <Text style={styles.emoji}>👻</Text>
-      <Text style={[typo.hero, styles.center, { color: t.text }]}>the internet ghosted us</Text>
-      <Text style={[typo.body, styles.center, { color: t.textDim }]}>
-        {APPS[app].name} wouldn&apos;t load. check your connection and give it another spin.
+    <View style={[StyleSheet.absoluteFill, styles.root, { backgroundColor: t.page }]} testID="load-error">
+      <View style={[styles.badge, { backgroundColor: t.fill }]}>
+        <Icon name="wifiSlash" size={30} color={t.secondary} />
+      </View>
+      <Text style={[typo.title2, styles.center, { color: t.label }]}>Can’t reach YouTube</Text>
+      <Text style={[typo.callout, styles.center, { color: t.secondary }]}>
+        Check your internet connection, then try again.
       </Text>
-      <Text style={[typo.mono, styles.center, { color: t.textFaint }]} numberOfLines={2}>
+      <Text style={[typo.footnote, styles.center, { color: t.tertiary }]} numberOfLines={2}>
         {error.description}
       </Text>
-      <View style={styles.actions}>
-        <PressableScale onPress={onRetry} accessibilityLabel="Retry" style={[styles.button, { backgroundColor: t.accent }]}>
-          <Text style={[typo.label, { color: t.accentInk }]}>try again</Text>
-        </PressableScale>
-        <PressableScale onPress={onHome} accessibilityLabel="Go home" style={[styles.button, { borderColor: t.border, borderWidth: 1 }]}>
-          <Text style={[typo.label, { color: t.text }]}>back to home</Text>
-        </PressableScale>
-      </View>
+      <PressableScale onPress={onRetry} accessibilityLabel="Try again" style={[styles.button, { backgroundColor: t.accent }]}>
+        <Text style={[typo.headline, { color: t.onAccent }]}>Try Again</Text>
+      </PressableScale>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { alignItems: 'center', justifyContent: 'center', padding: space.xl, gap: space.md },
-  emoji: { fontSize: 56 },
+  root: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: space.xxxl, gap: space.md },
+  badge: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', marginBottom: space.sm },
   center: { textAlign: 'center' },
-  actions: { flexDirection: 'row', gap: space.md, marginTop: space.md },
-  button: { borderRadius: radius.pill, paddingHorizontal: space.xl, paddingVertical: space.md },
+  button: { marginTop: space.lg, height: 50, minWidth: 180, borderRadius: 25, alignItems: 'center', justifyContent: 'center', paddingHorizontal: space.xxl },
 });

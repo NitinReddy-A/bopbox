@@ -1,5 +1,6 @@
-import { render, screen } from '@testing-library/react-native';
-import { BackHandler, StyleSheet } from 'react-native';
+import { render } from '@testing-library/react-native';
+import { BackHandler } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { Shell } from '@/shell/Shell';
 import { ShellProvider } from '@/shell/ShellContext';
@@ -7,20 +8,14 @@ import { ThemeProvider } from '@/theme/ThemeProvider';
 
 export async function renderShell() {
   return render(
-    <ThemeProvider>
-      <ShellProvider>
-        <Shell />
-      </ShellProvider>
-    </ThemeProvider>,
+    <GestureHandlerRootView>
+      <ThemeProvider>
+        <ShellProvider>
+          <Shell />
+        </ShellProvider>
+      </ThemeProvider>
+    </GestureHandlerRootView>,
   );
-}
-
-/** Whether an app's BrowserView wrapper is mounted, visible and touchable. */
-export function browserState(app: 'youtube' | 'spotify'): 'unmounted' | 'hidden' | 'visible' {
-  const wrapper = screen.queryByTestId(`browser-${app}`, { includeHiddenElements: true });
-  if (!wrapper) return 'unmounted';
-  const { opacity } = StyleSheet.flatten(wrapper.props.style);
-  return opacity === 1 && wrapper.props.pointerEvents === 'auto' ? 'visible' : 'hidden';
 }
 
 /**

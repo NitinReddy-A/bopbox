@@ -42,18 +42,6 @@
         </receiver>
 
         <receiver
-            android:name="com.nitinreddy.bopbox.core.widgets.QuickAccessWidgetProvider"
-            android:exported="true"
-            android:label="@string/bopbox_widget_quick_name">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/bopbox_widget_quick_info" />
-        </receiver>
-
-        <receiver
             android:name="com.nitinreddy.bopbox.core.widgets.WidgetActionReceiver"
             android:exported="false" />
     </application>

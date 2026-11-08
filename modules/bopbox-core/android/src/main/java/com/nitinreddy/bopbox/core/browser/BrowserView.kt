@@ -31,6 +31,7 @@ class BrowserView(context: Context, appContext: AppContext) : ExpoView(context, 
   private var appId: String? = null
   private var webView: BopboxWebView? = null
   private var fullscreenView: View? = null
+  private var swipeLayer: SwipeControlsLayout? = null
   private var savedOrientation: Int? = null
 
   private val rebuildListener: (String) -> Unit = { id -> if (id == appId) { webView = null; appId = null; setAppId(id) } }
@@ -100,7 +101,13 @@ class BrowserView(context: Context, appContext: AppContext) : ExpoView(context, 
       return
     }
     fullscreenView = view
-    container.addView(view, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+    // The player sits inside a layer that turns vertical swipes into brightness and volume.
+    val layer = SwipeControlsLayout(context) { activity }.apply {
+      setBackgroundColor(Color.BLACK)
+      addView(view, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+    }
+    swipeLayer = layer
+    container.addView(layer, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
     activity?.let { a ->
       savedOrientation = a.requestedOrientation
       a.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -115,7 +122,12 @@ class BrowserView(context: Context, appContext: AppContext) : ExpoView(context, 
   override fun onHideFullscreen() {
     val v = fullscreenView ?: return
     fullscreenView = null
-    container.removeView(v)
+    swipeLayer?.let { layer ->
+      layer.restore()
+      layer.removeView(v)
+      container.removeView(layer)
+    }
+    swipeLayer = null
     activity?.let { a ->
       a.requestedOrientation = savedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
       WindowCompat.getInsetsController(a.window, a.window.decorView).show(WindowInsetsCompat.Type.systemBars())

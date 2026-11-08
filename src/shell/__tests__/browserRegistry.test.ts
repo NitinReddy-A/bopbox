@@ -25,14 +25,14 @@ describe('BrowserRegistry', () => {
   it('queues commands for a view that has not mounted yet and flushes them in order, once', () => {
     const registry = new BrowserRegistry();
     const calls: string[] = [];
-    registry.run('spotify', (b) => b.search('a'));
-    registry.run('spotify', (b) => b.loadUrl('https://open.spotify.com/'));
+    registry.run('youtube', (b) => b.search('a'));
+    registry.run('youtube', (b) => b.loadUrl('https://m.youtube.com/'));
     const browser = fakeBrowser();
     jest.mocked(browser.search).mockImplementation(async () => void calls.push('search'));
     jest.mocked(browser.loadUrl).mockImplementation(async () => void calls.push('loadUrl'));
-    registry.attach('spotify', browser);
+    registry.attach('youtube', browser);
     expect(calls).toEqual(['search', 'loadUrl']);
-    registry.attach('spotify', fakeBrowser());
+    registry.attach('youtube', fakeBrowser());
     expect(calls).toHaveLength(2);
   });
 

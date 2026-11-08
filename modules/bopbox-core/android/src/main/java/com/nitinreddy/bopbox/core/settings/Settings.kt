@@ -1,6 +1,5 @@
 package com.nitinreddy.bopbox.core.settings
 
-import com.nitinreddy.bopbox.core.apps.AppCatalog
 import com.nitinreddy.bopbox.core.apps.SiteMode
 
 /**
@@ -10,54 +9,64 @@ import com.nitinreddy.bopbox.core.apps.SiteMode
 data class Settings(
   val theme: String = "system",
   val adblockEnabled: Boolean = true,
-  val adblockPerApp: Map<String, Boolean> = AppCatalog.all.associate { it.id to true },
+  val sponsorBlock: Boolean = true,
   val backgroundPlay: Boolean = true,
   val autoPip: Boolean = true,
-  val sponsorBlock: Boolean = true,
-  val launchTarget: String = "home",
-  val siteMode: Map<String, SiteMode> = AppCatalog.all.associate { it.id to it.defaultMode },
+  val siteMode: SiteMode = SiteMode.MOBILE,
   val filterAutoUpdate: Boolean = true,
+  /** Preferred resolution applied to every video ("auto" leaves YouTube's choice alone). */
+  val defaultQuality: String = "auto",
+  /** Playback rate applied to every video, as a string from [SPEEDS]. */
+  val defaultSpeed: String = "1",
+  val returnDislike: Boolean = true,
+  val hideShorts: Boolean = false,
+  val hideCards: Boolean = true,
+  val swipeControls: Boolean = true,
+  val alwaysRepeat: Boolean = false,
 ) {
-  fun adblockFor(appId: String): Boolean = adblockEnabled && (adblockPerApp[appId] ?: true)
+  @Suppress("UNUSED_PARAMETER")
+  fun adblockFor(appId: String): Boolean = adblockEnabled
 
-  fun modeFor(appId: String): SiteMode = siteMode[appId] ?: AppCatalog.require(appId).defaultMode
+  @Suppress("UNUSED_PARAMETER")
+  fun modeFor(appId: String): SiteMode = siteMode
 
   /** Flat key/value form shared with JS and SharedPreferences. */
-  fun toMap(): Map<String, Any> = buildMap {
-    put("theme", theme)
-    put("adblockEnabled", adblockEnabled)
-    put("backgroundPlay", backgroundPlay)
-    put("autoPip", autoPip)
-    put("sponsorBlock", sponsorBlock)
-    put("launchTarget", launchTarget)
-    put("filterAutoUpdate", filterAutoUpdate)
-    AppCatalog.all.forEach { app ->
-      put("adblock.${app.id}", adblockPerApp[app.id] ?: true)
-      put("mode.${app.id}", modeFor(app.id).name.lowercase())
-    }
-  }
+  fun toMap(): Map<String, Any> = mapOf(
+    "theme" to theme,
+    "adblockEnabled" to adblockEnabled,
+    "sponsorBlock" to sponsorBlock,
+    "backgroundPlay" to backgroundPlay,
+    "autoPip" to autoPip,
+    "siteMode" to siteMode.name.lowercase(),
+    "filterAutoUpdate" to filterAutoUpdate,
+    "defaultQuality" to defaultQuality,
+    "defaultSpeed" to defaultSpeed,
+    "returnDislike" to returnDislike,
+    "hideShorts" to hideShorts,
+    "hideCards" to hideCards,
+    "swipeControls" to swipeControls,
+    "alwaysRepeat" to alwaysRepeat,
+  )
 
   /** Apply a partial update coming from JS. Unknown keys and bad values are rejected loudly. */
   fun patched(patch: Map<String, Any?>): Settings {
     var next = this
     for ((key, value) in patch) {
-      next = when {
-        key == "theme" -> next.copy(theme = enumString(key, value, THEMES))
-        key == "adblockEnabled" -> next.copy(adblockEnabled = bool(key, value))
-        key == "backgroundPlay" -> next.copy(backgroundPlay = bool(key, value))
-        key == "autoPip" -> next.copy(autoPip = bool(key, value))
-        key == "sponsorBlock" -> next.copy(sponsorBlock = bool(key, value))
-        key == "filterAutoUpdate" -> next.copy(filterAutoUpdate = bool(key, value))
-        key == "launchTarget" -> next.copy(launchTarget = enumString(key, value, LAUNCH_TARGETS))
-        key.startsWith("adblock.") -> {
-          val id = appId(key)
-          next.copy(adblockPerApp = next.adblockPerApp + (id to bool(key, value)))
-        }
-        key.startsWith("mode.") -> {
-          val id = appId(key)
-          val mode = enumString(key, value, setOf("mobile", "desktop"))
-          next.copy(siteMode = next.siteMode + (id to SiteMode.valueOf(mode.uppercase())))
-        }
+      next = when (key) {
+        "theme" -> next.copy(theme = enumString(key, value, THEMES))
+        "adblockEnabled" -> next.copy(adblockEnabled = bool(key, value))
+        "sponsorBlock" -> next.copy(sponsorBlock = bool(key, value))
+        "backgroundPlay" -> next.copy(backgroundPlay = bool(key, value))
+        "autoPip" -> next.copy(autoPip = bool(key, value))
+        "siteMode" -> next.copy(siteMode = SiteMode.valueOf(enumString(key, value, setOf("mobile", "desktop")).uppercase()))
+        "filterAutoUpdate" -> next.copy(filterAutoUpdate = bool(key, value))
+        "defaultQuality" -> next.copy(defaultQuality = enumString(key, value, QUALITIES))
+        "defaultSpeed" -> next.copy(defaultSpeed = enumString(key, value, SPEEDS))
+        "returnDislike" -> next.copy(returnDislike = bool(key, value))
+        "hideShorts" -> next.copy(hideShorts = bool(key, value))
+        "hideCards" -> next.copy(hideCards = bool(key, value))
+        "swipeControls" -> next.copy(swipeControls = bool(key, value))
+        "alwaysRepeat" -> next.copy(alwaysRepeat = bool(key, value))
         else -> throw IllegalArgumentException("Unknown setting '$key'")
       }
     }
@@ -66,7 +75,8 @@ data class Settings(
 
   companion object {
     val THEMES = setOf("system", "dark", "light")
-    val LAUNCH_TARGETS = setOf("home") + AppCatalog.all.map { it.id }
+    val QUALITIES = setOf("auto", "2160", "1440", "1080", "720", "480", "360", "240", "144")
+    val SPEEDS = setOf("0.5", "0.75", "1", "1.25", "1.5", "1.75", "2", "2.5", "3")
 
     /** Rebuild from persisted values, falling back to defaults for anything missing or corrupt. */
     fun fromMap(map: Map<String, Any?>): Settings {
@@ -78,12 +88,6 @@ data class Settings(
           acc
         }
       }
-    }
-
-    private fun appId(key: String): String {
-      val id = key.substringAfter('.')
-      require(AppCatalog.byId(id) != null) { "Unknown app in setting '$key'" }
-      return id
     }
 
     private fun bool(key: String, value: Any?): Boolean =

@@ -1,5 +1,6 @@
 import { Slot } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { Shell } from '@/shell/Shell';
 import { ShellProvider } from '@/shell/ShellContext';
@@ -18,10 +19,10 @@ export default function RootLayout() {
   return (
     <ThemeProvider>
       <ShellProvider>
-        <View style={styles.root}>
+        <GestureHandlerRootView style={styles.root}>
           <Slot />
           <Shell />
-        </View>
+        </GestureHandlerRootView>
       </ShellProvider>
     </ThemeProvider>
   );

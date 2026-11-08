@@ -23,6 +23,14 @@ object WebViewPool {
   private val views = mutableMapOf<String, BopboxWebView>()
   private val main = Handler(Looper.getMainLooper())
   private val rebuildListeners = CopyOnWriteArraySet<(String) -> Unit>()
+  private val uiListeners = CopyOnWriteArraySet<(String) -> Unit>()
+
+  /** UI requests coming from inside a page, forwarded to the React Native shell. */
+  const val UI_OPEN_SETTINGS = "openSettings"
+
+  fun addUiListener(l: (String) -> Unit) { uiListeners += l }
+  fun removeUiListener(l: (String) -> Unit) { uiListeners -= l }
+  fun emitUi(event: String) { uiListeners.forEach { it(event) } }
   private lateinit var appContext: Context
 
   fun init(context: Context) {

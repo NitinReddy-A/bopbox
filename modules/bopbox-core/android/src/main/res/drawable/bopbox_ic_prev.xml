@@ -1,3 +1,11 @@
-<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
-  <path android:fillColor="#FFFFFFFF" android:pathData="M6,6h2v12H6zM9.5,12l8.5,6V6z"/>
+<?xml version="1.0" encoding="utf-8"?>
+<!-- backward.fill: two rounded triangles. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@color/bopbox_label"
+        android:pathData="M22.2,9.09L22.2,14.91A1.8,1.8 0,0 1 19.51,16.48L14.37,13.57A1.8,1.8 0,0 1 14.37,10.43L19.51,7.52A1.8,1.8 0,0 1 22.2,9.09ZM12.6,9.09L12.6,14.91A1.8,1.8 0,0 1 9.91,16.48L4.77,13.57A1.8,1.8 0,0 1 4.77,10.43L9.91,7.52A1.8,1.8 0,0 1 12.6,9.09Z" />
 </vector>

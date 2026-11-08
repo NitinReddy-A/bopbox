@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- music.note: placeholder glyph for missing artwork. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@color/bopbox_label_tertiary"
+        android:pathData="M12.2,5.3A1,1 0,0 1 12.95,4.33L18.25,2.98A1,1 0,0 1 19.5,3.95V6.9A1,1 0,0 1 18.75,7.87L14.2,9.03V17.4A3.6,3.1 0,1 1 12.2,14.62Z" />
+</vector>

@@ -1,11 +1,13 @@
 package com.nitinreddy.bopbox.core
 
 import android.content.Context
+import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import androidx.activity.ComponentActivity
 import com.nitinreddy.bopbox.core.adblock.AdBlocker
 import com.nitinreddy.bopbox.core.apps.AppCatalog
+import com.nitinreddy.bopbox.core.apps.IncomingLinks
 import com.nitinreddy.bopbox.core.browser.BrowserView
 import com.nitinreddy.bopbox.core.browser.WebViewPool
 import com.nitinreddy.bopbox.core.media.MediaCommand
@@ -37,6 +39,19 @@ class BopboxCoreModule : Module() {
   private val nowPlayingListener: (NowPlaying?) -> Unit = { np -> sendEvent(EVENT_NOW_PLAYING, mapOf("nowPlaying" to np?.toMap())) }
   private val statsListener: (AdBlocker.Stats) -> Unit = { s -> sendEvent(EVENT_STATS, s.toMap()) }
   private val pipListener: (Boolean) -> Unit = { inPip -> sendEvent(EVENT_PIP, mapOf("inPip" to inPip)) }
+  private val uiListener: (String) -> Unit = { event ->
+    if (event == WebViewPool.UI_OPEN_SETTINGS) sendEvent(EVENT_OPEN_SETTINGS, emptyMap<String, Any>())
+  }
+
+  /** A YouTube link another app sent us before JS was ready to receive the event. */
+  @Volatile private var pendingUrl: String? = null
+  private var handledLaunchIntent: Intent? = null
+
+  private fun handleIntent(intent: Intent?) {
+    val url = intent?.let { IncomingLinks.resolve(it.action, it.dataString, it.getStringExtra(Intent.EXTRA_TEXT)) } ?: return
+    pendingUrl = url
+    sendEvent(EVENT_OPEN_URL, mapOf("url" to url))
+  }
 
   private val context: Context
     get() = appContext.reactContext ?: throw IllegalStateException("React context unavailable")
@@ -44,7 +59,7 @@ class BopboxCoreModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("BopboxCore")
 
-    Events(EVENT_SETTINGS, EVENT_NOW_PLAYING, EVENT_STATS, EVENT_PIP)
+    Events(EVENT_SETTINGS, EVENT_NOW_PLAYING, EVENT_STATS, EVENT_PIP, EVENT_OPEN_SETTINGS, EVENT_OPEN_URL)
 
     OnCreate {
       Bopbox.init(context)
@@ -52,6 +67,7 @@ class BopboxCoreModule : Module() {
       PlaybackCoordinator.addListener(nowPlayingListener)
       AdBlocker.addListener(statsListener)
       PipController.addListener(pipListener)
+      WebViewPool.addUiListener(uiListener)
     }
 
     OnDestroy {
@@ -59,10 +75,20 @@ class BopboxCoreModule : Module() {
       PlaybackCoordinator.removeListener(nowPlayingListener)
       AdBlocker.removeListener(statsListener)
       PipController.removeListener(pipListener)
+      WebViewPool.removeUiListener(uiListener)
     }
+
+    OnNewIntent { intent -> handleIntent(intent) }
 
     OnActivityEntersForeground {
       WebViewPool.setBackground(false)
+      appContext.currentActivity?.intent?.let { launch ->
+        // The intent that cold-started us arrives before JS listens; keep it for consumeLaunchUrl.
+        if (launch !== handledLaunchIntent) {
+          handledLaunchIntent = launch
+          handleIntent(launch)
+        }
+      }
       (appContext.currentActivity as? ComponentActivity)?.let { activity ->
         main.post { PipController.attach(activity) }
       }
@@ -77,6 +103,12 @@ class BopboxCoreModule : Module() {
     }
 
     Function("getSettings") { SettingsStore.current.toMap() }
+
+    Function("consumeLaunchUrl") {
+      val url = pendingUrl
+      pendingUrl = null
+      url
+    }
 
     Function("updateSettings") { patch: Map<String, Any?> -> SettingsStore.update(patch).toMap() }
 
@@ -140,5 +172,7 @@ class BopboxCoreModule : Module() {
     const val EVENT_NOW_PLAYING = "onNowPlayingChanged"
     const val EVENT_STATS = "onAdblockStatsChanged"
     const val EVENT_PIP = "onPipModeChanged"
+    const val EVENT_OPEN_SETTINGS = "onOpenSettings"
+    const val EVENT_OPEN_URL = "onOpenUrl"
   }
 }

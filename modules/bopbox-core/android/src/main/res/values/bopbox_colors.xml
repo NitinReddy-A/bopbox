@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Bopbox design tokens (light). Keep in sync with the React Native theme. -->
+<resources>
+    <color name="bopbox_background">#FFF5F5F7</color>
+    <color name="bopbox_surface">#FFFFFFFF</color>
+    <color name="bopbox_fill">#FFEDEDF0</color>
+    <color name="bopbox_separator">#FFD8D8DD</color>
+    <color name="bopbox_label">#FF1D1D1F</color>
+    <color name="bopbox_label_secondary">#FF6E6E73</color>
+    <color name="bopbox_label_tertiary">#FFA1A1A6</color>
+    <color name="bopbox_accent">#FFFF0033</color>
+    <color name="bopbox_on_accent">#FFFFFFFF</color>
+    <color name="bopbox_youtube">#FFFF0033</color>
+</resources>

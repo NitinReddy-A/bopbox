@@ -1,4 +1,4 @@
-import { BopboxCore, type AppId, type BrowserViewRef } from '@bopbox/core';
+import type { BrowserViewRef } from '@bopbox/core';
 import { createContext, useContext, useMemo, useReducer, useState, type Dispatch, type ReactNode } from 'react';
 
 import { BrowserRegistry, type BrowserCommand } from './browserRegistry';
@@ -6,39 +6,33 @@ import { createInitialState, shellReducer, type ShellAction, type ShellState } f
 
 export type ShellApi = {
   dispatch: Dispatch<ShellAction>;
-  /** Show an app (mounting its BrowserView on first use), then optionally drive it. */
-  openApp(app: AppId, command?: BrowserCommand): void;
-  goHome(): void;
   openSettings(): void;
   closeSettings(): void;
-  focusSearch(): void;
-  /** Send a command to an app's browser, queued until the view exists. */
-  run(app: AppId, command: BrowserCommand): void;
-  attachBrowser(app: AppId, ref: BrowserViewRef | null): void;
+  /** Send a command to the YouTube view, queued until the view exists. */
+  run(command: BrowserCommand): void;
+  /** Open a YouTube URL (a shared link, a notification tap) in the app. */
+  openUrl(url: string): void;
+  attachBrowser(ref: BrowserViewRef | null): void;
 };
 
 const StateContext = createContext<ShellState | null>(null);
 const ApiContext = createContext<ShellApi | null>(null);
 
 export function ShellProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(shellReducer, undefined, () =>
-    createInitialState(BopboxCore.getSettings().launchTarget),
-  );
+  const [state, dispatch] = useReducer(shellReducer, undefined, createInitialState);
   const [registry] = useState(() => new BrowserRegistry());
 
   const api = useMemo<ShellApi>(
     () => ({
       dispatch,
-      openApp(app, command) {
-        dispatch({ type: 'OPEN_APP', app });
-        if (command) registry.run(app, command);
-      },
-      goHome: () => dispatch({ type: 'GO_HOME' }),
       openSettings: () => dispatch({ type: 'OPEN_SETTINGS' }),
       closeSettings: () => dispatch({ type: 'CLOSE_SETTINGS' }),
-      focusSearch: () => dispatch({ type: 'FOCUS_SEARCH' }),
-      run: (app, command) => registry.run(app, command),
-      attachBrowser: (app, ref) => registry.attach(app, ref),
+      run: (command) => registry.run('youtube', command),
+      openUrl(url) {
+        dispatch({ type: 'CLOSE_SETTINGS' });
+        registry.run('youtube', (browser) => browser.loadUrl(url));
+      },
+      attachBrowser: (ref) => registry.attach('youtube', ref),
     }),
     [registry],
   );

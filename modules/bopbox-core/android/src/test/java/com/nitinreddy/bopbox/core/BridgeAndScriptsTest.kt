@@ -21,7 +21,7 @@ class BridgeAndScriptsTest {
   @Test fun `parses media state from the page`() {
     val raw = """{"t":"media","title":"Song","artist":"Band","album":"LP","artwork":"https://i.scdn.co/a.jpg",
       "playing":true,"pos":12.5,"dur":200,"video":false,"ad":false,"actions":["play","pause","nexttrack","seekto"]}"""
-    val msg = BridgeProtocol.parse("spotify", raw, 1000) as BridgeMessage.Media
+    val msg = BridgeProtocol.parse("youtube", raw, 1000) as BridgeMessage.Media
     val s = msg.state
     assertEquals("Song", s.title)
     assertEquals(12_500, s.positionMs)
@@ -93,16 +93,32 @@ class BridgeAndScriptsTest {
     assertTrue(script.indexOf("/*bridge.js*/") < script.indexOf("/*youtube.js*/"))
   }
 
-  @Test fun `cosmetic rules are dropped when adblock is off for the app`() {
-    val script = PageScripts.build(
-      AppCatalog.SPOTIFY,
-      Settings().patched(mapOf("adblock.spotify" to false)),
-      mapOf("open.spotify.com" to listOf(".ad")),
-    ) { "" }
-    val cfg = JSONObject(script.substringAfter("window.__bopboxConfig=").substringBefore(";})();"))
+  @Test fun `cosmetic rules are dropped when adblock is off`() {
+    val cfg = PageScripts.config(AppCatalog.YOUTUBE, Settings().patched(mapOf("adblockEnabled" to false)), mapOf("m.youtube.com" to listOf(".ad")))
     assertFalse(cfg.getBoolean("adblock"))
     assertEquals(0, cfg.getJSONObject("cosmetic").length())
-    assertTrue(cfg.getBoolean("desktop"))
+  }
+
+  @Test fun `config carries the player preferences`() {
+    val cfg = PageScripts.config(
+      AppCatalog.YOUTUBE,
+      Settings().patched(mapOf("defaultSpeed" to "1.75", "defaultQuality" to "720", "hideShorts" to true, "alwaysRepeat" to true)),
+      emptyMap(),
+    )
+    assertEquals(1.75, cfg.getDouble("defaultSpeed"), 0.0)
+    assertEquals("720", cfg.getString("defaultQuality"))
+    assertTrue(cfg.getBoolean("hideShorts"))
+    assertTrue(cfg.getBoolean("alwaysRepeat"))
+    assertTrue(cfg.getBoolean("returnDislike"))
+  }
+
+  @Test fun `live update merges into the running page config`() {
+    val js = PageScripts.liveUpdate(JSONObject().put("hideShorts", true))
+    assertEquals("window.__bopboxConfig&&Object.assign(window.__bopboxConfig,{\"hideShorts\":true});", js)
+  }
+
+  @Test fun `the settings button message is understood`() {
+    assertEquals(BridgeMessage.OpenSettings, BridgeProtocol.parse("youtube", """{"t":"openSettings"}""", 0))
   }
 
   @Test fun `commands are json encoded`() {
@@ -112,7 +128,6 @@ class BridgeAndScriptsTest {
 
   @Test fun `scripts are restricted to the app origins`() {
     assertTrue(PageScripts.originsFor(AppCatalog.YOUTUBE).all { it.startsWith("https://") && it.contains("youtube.com") })
-    assertEquals(setOf("https://open.spotify.com"), PageScripts.originsFor(AppCatalog.SPOTIFY))
   }
 
   @Test fun `every script referenced by the catalog exists as an asset`() {

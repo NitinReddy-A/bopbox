@@ -1,3 +1,11 @@
-<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
-  <path android:fillColor="#FF0B0B12" android:pathData="M8,5.14v13.72a1,1 0,0 0,1.5 0.86l11,-6.86a1,1 0,0 0,0 -1.72l-11,-6.86A1,1 0,0 0,8 5.14z"/>
+<?xml version="1.0" encoding="utf-8"?>
+<!-- play.fill: rounded triangle, nudged right for optical centring. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@color/bopbox_on_accent"
+        android:pathData="M10.49,6.09L17.47,10.09A2.2,2.2 0,0 1 17.47,13.91L10.49,17.91A2.2,2.2 0,0 1 7.2,16L7.2,8A2.2,2.2 0,0 1 10.49,6.09Z" />
 </vector>

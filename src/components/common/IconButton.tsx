@@ -1,43 +1,51 @@
-import { StyleSheet, Text } from 'react-native';
+import { StyleSheet } from 'react-native';
 
+import { Icon, type IconName } from '@/components/icons/Icon';
+import type { Feel } from '@/lib/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
 
 import { PressableScale } from './PressableScale';
 
 type Props = {
-  glyph: string;
+  icon: IconName;
   label: string;
   onPress: () => void;
+  /** Visual diameter; the hit target never drops below 44. */
   size?: number;
-  tone?: 'plain' | 'filled';
+  /** `plain`: glyph only. `tinted`: soft fill circle. `filled`: the accent, for the one primary control. */
+  tone?: 'plain' | 'tinted' | 'filled';
+  color?: string;
   disabled?: boolean;
+  feel?: Feel;
+  testID?: string;
 };
 
-export function IconButton({ glyph, label, onPress, size = 40, tone = 'plain', disabled }: Props) {
+export function IconButton({ icon, label, onPress, size = 36, tone = 'plain', color, disabled, feel, testID }: Props) {
   const t = useTheme();
-  const filled = tone === 'filled';
+  const glyph = tone === 'filled' ? t.onAccent : (color ?? t.label);
+  const slop = Math.max(0, (44 - size) / 2);
   return (
     <PressableScale
       accessibilityLabel={label}
       accessibilityState={{ disabled }}
       disabled={disabled}
-      hitSlop={6}
+      hitSlop={slop}
+      depth={0.9}
+      feel={feel}
       onPress={onPress}
-      depth={0.88}
+      testID={testID}
       style={[
         styles.base,
         { width: size, height: size, borderRadius: size / 2 },
-        filled && { backgroundColor: t.accent },
-        disabled && styles.disabled,
+        tone === 'tinted' && { backgroundColor: t.fill },
+        tone === 'filled' && { backgroundColor: t.accent },
       ]}
     >
-      <Text style={[styles.glyph, { fontSize: size * 0.45, color: filled ? t.accentInk : t.text }]}>{glyph}</Text>
+      <Icon name={icon} color={glyph} size={tone === 'plain' ? size * 0.72 : size * 0.52} />
     </PressableScale>
   );
 }
 
 const styles = StyleSheet.create({
   base: { alignItems: 'center', justifyContent: 'center' },
-  glyph: { fontWeight: '800', includeFontPadding: false, textAlign: 'center' },
-  disabled: { opacity: 0.35 },
 });

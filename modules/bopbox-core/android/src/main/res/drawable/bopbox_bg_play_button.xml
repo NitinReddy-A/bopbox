@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Accent play/pause circle, inset so the view keeps a larger touch target than the visible disc. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android" android:inset="4dp">
+    <shape android:shape="oval">
+        <solid android:color="@color/bopbox_accent" />
+    </shape>
+</inset>

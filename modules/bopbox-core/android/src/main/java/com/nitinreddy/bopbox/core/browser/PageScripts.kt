@@ -13,9 +13,33 @@ object PageScripts {
   /** Origins scripts and the native bridge are restricted to. */
   fun originsFor(app: AppSpec): Set<String> = when (app.id) {
     "youtube" -> setOf("https://m.youtube.com", "https://www.youtube.com", "https://youtube.com")
-    "spotify" -> setOf("https://open.spotify.com")
     else -> emptySet()
   }
+
+  /** The config object page scripts read (as `window.__bopboxConfig`). */
+  fun config(app: AppSpec, settings: Settings, cosmeticByHost: Map<String, List<String>>): JSONObject =
+    JSONObject().apply {
+      put("app", app.id)
+      put("adblock", settings.adblockFor(app.id))
+      put("backgroundPlay", settings.backgroundPlay)
+      put("sponsorBlock", settings.sponsorBlock)
+      put("desktop", settings.modeFor(app.id).name == "DESKTOP")
+      put("defaultQuality", settings.defaultQuality)
+      put("defaultSpeed", settings.defaultSpeed.toDouble())
+      put("returnDislike", settings.returnDislike)
+      put("hideShorts", settings.hideShorts)
+      put("hideCards", settings.hideCards)
+      put("alwaysRepeat", settings.alwaysRepeat)
+      val css = JSONObject()
+      if (settings.adblockFor(app.id)) {
+        cosmeticByHost.forEach { (host, selectors) -> if (selectors.isNotEmpty()) css.put(host, JSONArray(selectors)) }
+      }
+      put("cosmetic", css)
+    }
+
+  /** Snippet that updates an already-loaded page's config in place, so toggles apply at once. */
+  fun liveUpdate(config: JSONObject): String =
+    "window.__bopboxConfig&&Object.assign(window.__bopboxConfig,$config);"
 
   fun build(
     app: AppSpec,
@@ -23,18 +47,7 @@ object PageScripts {
     cosmeticByHost: Map<String, List<String>>,
     readAsset: (String) -> String,
   ): String {
-    val config = JSONObject().apply {
-      put("app", app.id)
-      put("adblock", settings.adblockFor(app.id))
-      put("backgroundPlay", settings.backgroundPlay)
-      put("sponsorBlock", settings.sponsorBlock && app.id == "youtube")
-      put("desktop", settings.modeFor(app.id).name == "DESKTOP")
-      val css = JSONObject()
-      if (settings.adblockFor(app.id)) {
-        cosmeticByHost.forEach { (host, selectors) -> if (selectors.isNotEmpty()) css.put(host, JSONArray(selectors)) }
-      }
-      put("cosmetic", css)
-    }
+    val config = config(app, settings, cosmeticByHost)
     return buildString {
       append("(function(){if(window.__bopboxConfig)return;window.__bopboxConfig=")
       append(config.toString())

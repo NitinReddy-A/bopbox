@@ -2,13 +2,13 @@ import { BopboxCore } from '@bopbox/core';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { Alert, type AlertButton } from 'react-native';
 
-import { emit, nativeState } from '@/test/mockBopboxCore';
+import { emit } from '@/test/mockBopboxCore';
 import { renderShell } from '@/test/renderShell';
 
 async function openSettings() {
   await renderShell();
-  await fireEvent.press(screen.getByLabelText('Settings'));
-  await screen.findByText('settings');
+  await act(async () => emit('onOpenSettings', {}));
+  await screen.findByText('Settings');
 }
 
 function pressAlertButton(text: string) {
@@ -21,71 +21,70 @@ describe('Settings', () => {
     jest.spyOn(Alert, 'alert').mockImplementation(() => {});
   });
 
-  it('writes switches through to native with the right key', async () => {
+  it('writes each switch through to native under its own key', async () => {
     await openSettings();
-    await fireEvent(screen.getByLabelText('Background play'), 'valueChange', false);
-    expect(BopboxCore.updateSettings).toHaveBeenLastCalledWith({ backgroundPlay: false });
-    await fireEvent(screen.getByLabelText('SponsorBlock'), 'valueChange', false);
-    expect(BopboxCore.updateSettings).toHaveBeenLastCalledWith({ sponsorBlock: false });
-    await fireEvent(screen.getByLabelText('On Spotify'), 'valueChange', false);
-    expect(BopboxCore.updateSettings).toHaveBeenLastCalledWith({ 'adblock.spotify': false });
+    const cases: [label: string, key: string, value: boolean][] = [
+      ['Block ads', 'adblockEnabled', false],
+      ['Skip sponsors', 'sponsorBlock', false],
+      ['Background play', 'backgroundPlay', false],
+      ['Picture in picture', 'autoPip', false],
+      ['Always repeat', 'alwaysRepeat', true],
+      ['Swipe controls', 'swipeControls', false],
+      ['Show dislikes', 'returnDislike', false],
+      ['Hide end screens and cards', 'hideCards', false],
+      ['Hide Shorts', 'hideShorts', true],
+    ];
+    for (const [label, key, value] of cases) {
+      await fireEvent.press(screen.getByRole('switch', { name: label }));
+      expect(BopboxCore.updateSettings).toHaveBeenLastCalledWith({ [key]: value });
+    }
   });
 
-  it('reflects the value native returns', async () => {
+  it('picks a playback speed from the inline list', async () => {
     await openSettings();
-    await fireEvent(screen.getByLabelText('Block ads & trackers'), 'valueChange', false);
-    expect(BopboxCore.updateSettings).toHaveBeenLastCalledWith({ adblockEnabled: false });
-    expect(screen.getByLabelText('Block ads & trackers')).toHaveProp('value', false);
-    expect(screen.getByLabelText('On YouTube')).toBeDisabled();
+    await fireEvent.press(screen.getByLabelText('Playback speed'));
+    await fireEvent.press(await screen.findByLabelText('Playback speed: 1.5×'));
+    expect(BopboxCore.updateSettings).toHaveBeenLastCalledWith({ defaultSpeed: '1.5' });
+    await waitFor(() => expect(screen.queryByLabelText('Playback speed: 2×')).toBeNull());
   });
 
-  it('writes segmented choices through to native', async () => {
+  it('picks a default video quality', async () => {
     await openSettings();
-    await fireEvent.press(screen.getByLabelText('Theme: light'));
+    await fireEvent.press(screen.getByLabelText('Video quality'));
+    await fireEvent.press(await screen.findByLabelText('Video quality: 1080p'));
+    expect(BopboxCore.updateSettings).toHaveBeenLastCalledWith({ defaultQuality: '1080' });
+  });
+
+  it('switches the YouTube layout and the theme with segmented controls', async () => {
+    await openSettings();
+    await fireEvent.press(screen.getByLabelText('YouTube layout: Desktop'));
+    expect(BopboxCore.updateSettings).toHaveBeenLastCalledWith({ siteMode: 'desktop' });
+    await fireEvent.press(screen.getByLabelText('Theme: Light'));
     expect(BopboxCore.updateSettings).toHaveBeenLastCalledWith({ theme: 'light' });
-    await fireEvent.press(screen.getByLabelText('YouTube site: desktop'));
-    expect(BopboxCore.updateSettings).toHaveBeenLastCalledWith({ 'mode.youtube': 'desktop' });
-    await fireEvent.press(screen.getByLabelText('Launch into: Spotify'));
-    expect(BopboxCore.updateSettings).toHaveBeenLastCalledWith({ launchTarget: 'spotify' });
   });
 
-  it('follows settings changed elsewhere (e.g. by a widget)', async () => {
+  it('refreshes the filter lists and shows the result', async () => {
     await openSettings();
-    await act(async () => emit('onSettingsChanged', { ...nativeState.settings, autoPip: false }));
-    expect(screen.getByLabelText('Auto picture-in-picture')).toHaveProp('value', false);
+    await fireEvent.press(screen.getByLabelText('Update filter lists'));
+    await waitFor(() => expect(BopboxCore.updateFilters).toHaveBeenCalled());
+    expect(await screen.findByText(/1,204 ads and trackers blocked/)).toBeTruthy();
   });
 
-  it('refreshes filters with a spinner', async () => {
-    await openSettings();
-    await fireEvent.press(screen.getByLabelText('Update filters now'));
-    expect(BopboxCore.updateFilters).toHaveBeenCalled();
-    await waitFor(() => expect(screen.queryByTestId('Update filters now-busy')).toBeNull());
-    expect(screen.getByText('last refresh: just now')).toBeOnTheScreen();
-  });
-
-  it('confirms before signing out of an app', async () => {
+  it('asks before signing out or clearing data', async () => {
     await openSettings();
     await fireEvent.press(screen.getByLabelText('Sign out of YouTube'));
-    expect(Alert.alert).toHaveBeenCalled();
     expect(BopboxCore.clearAppData).not.toHaveBeenCalled();
-    await act(async () => pressAlertButton('sign out'));
+    await act(async () => pressAlertButton('Sign Out'));
     expect(BopboxCore.clearAppData).toHaveBeenCalledWith('youtube');
-  });
 
-  it('confirms before nuking everything, and backing out does nothing', async () => {
-    await openSettings();
-    await fireEvent.press(screen.getByLabelText('Nuke all browsing data'));
-    await act(async () => pressAlertButton('nah'));
-    expect(BopboxCore.clearAllData).not.toHaveBeenCalled();
-    await fireEvent.press(screen.getByLabelText('Nuke all browsing data'));
-    await act(async () => pressAlertButton('nuke it'));
+    await fireEvent.press(screen.getByLabelText('Clear all browsing data'));
+    await act(async () => pressAlertButton('Clear Data'));
     expect(BopboxCore.clearAllData).toHaveBeenCalled();
   });
 
-  it('closes back to home', async () => {
+  it('closes with Done', async () => {
     await openSettings();
     await fireEvent.press(screen.getByLabelText('Close settings'));
     await waitFor(() => expect(screen.queryByTestId('surface-settings')).toBeNull());
-    expect(screen.getByLabelText('Open YouTube')).toBeOnTheScreen();
   });
 });

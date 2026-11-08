@@ -52,6 +52,9 @@ sealed interface BridgeMessage {
   data class Media(val state: NowPlaying) : BridgeMessage
   data class Blocked(val count: Int) : BridgeMessage
   data class Log(val text: String) : BridgeMessage
+
+  /** The page's own Settings button (injected into YouTube's top bar) was tapped. */
+  data object OpenSettings : BridgeMessage
 }
 
 object BridgeProtocol {
@@ -89,6 +92,7 @@ object BridgeProtocol {
       }
       "blocked" -> BridgeMessage.Blocked(o.optInt("n", 0).coerceIn(0, 1000))
       "log" -> BridgeMessage.Log(o.optString("m").take(500))
+      "openSettings" -> BridgeMessage.OpenSettings
       else -> null
     }
   }

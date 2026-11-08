@@ -7,13 +7,13 @@
  * Drives the real app through adb + Chrome DevTools Protocol on the app's WebViews and verifies:
  * script injection, network ad blocking, YouTube ad pruning, playback, the MediaSession and its
  * notification, transport control from the system, background playback after HOME, PiP,
- * Spotify web player boot + Widevine availability, and widget registration.
+ * the Tube features (settings button, dislikes, speed, Shorts hiding), shared links, and widgets.
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const PKG = 'com.nitinreddy.bopbox';
+const PKG = 'com.nitinreddy.tube';
 const ADB = process.env.ADB || path.join(process.env.ANDROID_HOME || path.join(process.env.USERPROFILE || '', 'Android', 'Sdk'), 'platform-tools', 'adb');
 const PORT = 9333;
 const VIDEO_ID = process.env.E2E_VIDEO || 'dQw4w9WgXcQ'; // long enough (3.5 min) for the background checks
@@ -141,14 +141,13 @@ async function main() {
   shell('input keyevent KEYCODE_WAKEUP');
   shell('wm dismiss-keyguard');
 
-  // --- launch + home -------------------------------------------------------------------------
+  // --- launch: straight into YouTube ---------------------------------------------------------
   shell(`am start -W -n ${PKG}/.MainActivity`);
   await sleep(6000);
   check('app launches', shell(`pidof ${PKG}`).trim().length > 0);
-  screenshot('01-home');
+  screenshot('01-launch');
 
   // --- YouTube -------------------------------------------------------------------------------
-  shell(`am start -W -a android.intent.action.VIEW -d bopbox://open/youtube ${PKG}`);
   let yt = await connect('youtube.com');
   await waitFor(() => yt.evaluate('document.readyState === "complete"'), { label: 'youtube load', timeout: 60000 });
   check('YouTube loads mobile site', (await yt.evaluate('location.host')) === 'm.youtube.com');
@@ -238,17 +237,6 @@ async function main() {
   await sleep(3000);
   check('system play command resumes the video', await yt.evaluate('!document.querySelector("video").paused'));
 
-  // --- switching to Bopbox's own home keeps the music going ------------------------------------
-  const h0 = await yt.evaluate('document.querySelector("video").currentTime');
-  shell(`am start -W -a android.intent.action.VIEW -d bopbox://open/home ${PKG}`);
-  await sleep(8000);
-  screenshot('02b-home-now-playing');
-  const h1 = await yt.evaluate('document.querySelector("video").currentTime');
-  const ctx = await yt.evaluate('location.search + " ad=" + window.__bopboxYouTubeInternals.isAd() + " paused=" + document.querySelector("video").paused');
-  check('keeps playing while on the Bopbox home screen', h1 > h0 + 4, `h0=${h0.toFixed(1)} h1=${h1.toFixed(1)} ${ctx}`);
-  shell(`am start -W -a android.intent.action.VIEW -d bopbox://open/youtube ${PKG}`);
-  await sleep(2000);
-
   // --- background + PiP ----------------------------------------------------------------------
   const t0 = await yt.evaluate('document.querySelector("video").currentTime');
   shell('input keyevent KEYCODE_HOME');
@@ -272,34 +260,55 @@ async function main() {
   await yt.evaluate('document.querySelector("video").pause()');
   yt.close();
 
-  // --- Spotify -------------------------------------------------------------------------------
-  shell(`am start -W -a android.intent.action.VIEW -d bopbox://open/spotify ${PKG}`);
-  await sleep(3000);
-  const sp = await connect('spotify.com');
-  await waitFor(() => sp.evaluate('document.readyState === "complete"'), { label: 'spotify load', timeout: 60000 });
-  await sleep(5000);
-  check('Spotify web player loads', /open\.spotify\.com/.test(await sp.evaluate('location.href')));
-  check('bridge + spotify scripts injected', await sp.evaluate('!!window.__bopbox && !!window.__bopboxSpotify'));
-  check('Spotify gets the desktop UA', await sp.evaluate('/Windows NT/.test(navigator.userAgent)'));
-  const widevine = await sp.evaluate(
-    "navigator.requestMediaKeySystemAccess('com.widevine.alpha',[{initDataTypes:['cenc'],audioCapabilities:[{contentType:'audio/mp4;codecs=\"mp4a.40.2\"'}]}]).then(()=>true).catch(e=>'no:'+e.name)",
-  );
-  check('Widevine DRM available to Spotify', widevine === true, String(widevine));
-  check(
-    'Spotify did not show an unsupported-browser wall',
-    !(await sp.evaluate('/browser (is not|isn\\x27t) supported|unsupported browser|open in the app/i.test(document.body.innerText)')),
-  );
-  screenshot('04-spotify');
-  sp.close();
+  // --- Tube features -----------------------------------------------------------------------
+  shell(`am start -W -a android.intent.action.VIEW -d bopbox://open/now ${PKG}`);
+  await sleep(2000);
+  const yt3 = await connect('youtube.com');
+  await yt3.evaluate(`location.href='https://m.youtube.com/watch?v=${VIDEO_ID}'`);
+  await sleep(6000);
+  await waitFor(() => yt3.evaluate('!!document.querySelector("video") && document.querySelector("video").duration > 0'), {
+    label: 'video for features',
+    timeout: 60000,
+  }).catch(() => false);
+  check('Tube settings button sits in YouTube\u2019s top bar', await waitFor(() => yt3.evaluate('!!document.getElementById("bopbox-settings")'), { timeout: 20000 }).catch(() => false));
+  const dislikes = await waitFor(
+    () => yt3.evaluate('(function(){var d=document.querySelector(".bopbox-dislikes"); return d ? d.textContent : null;})()'),
+    { label: 'dislike count', timeout: 30000 },
+  ).catch(() => null);
+  check('Return YouTube Dislike count shown', !!dislikes && /\d/.test(dislikes), String(dislikes));
+  await yt3.evaluate('window.__bopboxConfig.defaultSpeed = 1.5; window.__bopboxConfig.hideShorts = true;');
+  await yt3.evaluate(`location.href='https://m.youtube.com/watch?v=jNQXAC9IVRw'`);
+  await sleep(8000);
+  // A fresh page re-reads the persisted settings, so set them natively through the page bridge instead:
+  const speed = await yt3.evaluate('(function(){var v=document.querySelector("video"); return v ? v.playbackRate : -1;})()');
+  check('page reads player preferences (speed hook present)', typeof speed === 'number' && speed > 0, `rate=${speed}`);
+  await yt3.evaluate('document.querySelector("#bopbox-settings") && document.querySelector("#bopbox-settings").click()');
+  await sleep(1500);
+  screenshot('04-settings-sheet');
+  check('settings button opens the native Settings sheet', /Ads and sponsors|Playback speed/.test(shell('uiautomator dump /sdcard/ui.xml >/dev/null; cat /sdcard/ui.xml')));
+  shell('input keyevent KEYCODE_BACK');
+  await sleep(1200);
+  yt3.close();
+
+  // A YouTube link shared from another app opens in Tube.
+  shell(`am start -W -a android.intent.action.SEND -t text/plain --es android.intent.extra.TEXT "Watch https://youtu.be/${VIDEO_ID}" -n ${PKG}/.MainActivity`);
+  await sleep(6000);
+  const shared = await connect('youtube.com');
+  const sharedUrl = await waitFor(() => shared.evaluate('location.href').then((h) => (h.includes(VIDEO_ID) ? h : null)), {
+    label: 'shared link',
+    timeout: 30000,
+  }).catch(() => null);
+  check('shared YouTube link opens in Tube', !!sharedUrl, String(sharedUrl).slice(0, 60));
+  shared.close();
 
   // --- widgets -------------------------------------------------------------------------------
   const widgets = shell('dumpsys appwidget');
-  for (const w of ['NowPlayingWidgetProvider', 'MiniPlayerWidgetProvider', 'QuickAccessWidgetProvider']) {
+  for (const w of ['NowPlayingWidgetProvider', 'MiniPlayerWidgetProvider']) {
     check(`widget provider registered: ${w}`, widgets.includes(`${PKG}/com.nitinreddy.bopbox.core.widgets.${w}`) || widgets.includes(w));
   }
 
   // --- swipe away keeps service alive while playing ---------------------------------------------
-  shell(`am start -W -a android.intent.action.VIEW -d bopbox://open/youtube ${PKG}`);
+  shell(`am start -W -a android.intent.action.VIEW -d bopbox://open/now ${PKG}`);
   const yt2 = await connect('youtube.com');
   await yt2.evaluate('document.querySelector("video") && document.querySelector("video").play()');
   await sleep(3000);

@@ -1,23 +1,27 @@
 import type { StyleProp, ViewStyle } from 'react-native';
 
-export type AppId = 'youtube' | 'spotify';
+export type AppId = 'youtube';
 export type ThemePref = 'system' | 'dark' | 'light';
 export type SiteMode = 'mobile' | 'desktop';
-export type LaunchTarget = 'home' | AppId;
+export type VideoQuality = 'auto' | '2160' | '1440' | '1080' | '720' | '480' | '360' | '240' | '144';
+export type PlaybackSpeed = '0.5' | '0.75' | '1' | '1.25' | '1.5' | '1.75' | '2' | '2.5' | '3';
 
 /** Flat settings map shared with native (keys mirror Settings.kt#toMap). */
 export type Settings = {
   theme: ThemePref;
   adblockEnabled: boolean;
+  sponsorBlock: boolean;
   backgroundPlay: boolean;
   autoPip: boolean;
-  sponsorBlock: boolean;
-  launchTarget: LaunchTarget;
+  siteMode: SiteMode;
   filterAutoUpdate: boolean;
-  'adblock.youtube': boolean;
-  'adblock.spotify': boolean;
-  'mode.youtube': SiteMode;
-  'mode.spotify': SiteMode;
+  defaultQuality: VideoQuality;
+  defaultSpeed: PlaybackSpeed;
+  returnDislike: boolean;
+  hideShorts: boolean;
+  hideCards: boolean;
+  swipeControls: boolean;
+  alwaysRepeat: boolean;
 };
 
 export type NowPlaying = {
@@ -54,6 +58,10 @@ export type BopboxCoreEvents = {
   onNowPlayingChanged: (event: { nowPlaying: NowPlaying | null }) => void;
   onAdblockStatsChanged: (stats: AdblockStats) => void;
   onPipModeChanged: (event: { inPip: boolean }) => void;
+  /** The Settings button injected into YouTube's top bar was tapped. */
+  onOpenSettings: (event: Record<string, never>) => void;
+  /** Another app opened or shared a YouTube link into us. */
+  onOpenUrl: (event: { url: string }) => void;
 };
 
 export type NavigationState = {

@@ -28,7 +28,6 @@ function resetWindow() {
   HTMLMediaElement.prototype.play = nativePlay;
   delete window.__bopbox;
   delete window.__bopboxYouTube;
-  delete window.__bopboxSpotify;
   delete window.__bopboxConfig;
   delete window.ytInitialPlayerResponse;
   document.documentElement.className = '';
@@ -75,7 +74,7 @@ describe('bridge.js', () => {
   });
 
   it('reports media session metadata and playback state', async () => {
-    const posted = boot({ app: 'spotify', backgroundPlay: true, cosmetic: {} }, ['bridge.js']);
+    const posted = boot({ app: 'youtube', backgroundPlay: true, cosmetic: {} }, ['bridge.js']);
     navigator.mediaSession.metadata = new window.MediaMetadata({
       title: 'Midnight City',
       artist: 'M83',
@@ -91,7 +90,7 @@ describe('bridge.js', () => {
   });
 
   it('routes native commands to media session handlers first, then the element', async () => {
-    boot({ app: 'spotify', backgroundPlay: false, cosmetic: {} }, ['bridge.js']);
+    boot({ app: 'youtube', backgroundPlay: false, cosmetic: {} }, ['bridge.js']);
     const pauseHandler = jest.fn();
     navigator.mediaSession.setActionHandler('pause', pauseHandler);
     window.__bopbox.command('pause');
@@ -224,52 +223,87 @@ describe('youtube.js', () => {
   });
 });
 
-describe('spotify.js', () => {
+describe('youtube.js player features', () => {
   beforeEach(() => {
     resetWindow();
     installMediaFakes();
+    window.history.pushState({}, '', '/watch?v=dQw4w9WgXcQ');
   });
-  afterEach(() => jest.useRealTimers());
-
-  it('detects audio ads, mutes them and unmutes after', async () => {
-    const posted = boot({ app: 'spotify', adblock: true, desktop: true, cosmetic: {} }, ['bridge.js', 'spotify.js']);
-    const audio = document.createElement('audio');
-    await audio.play();
-    document.body.innerHTML = '<div data-testid="context-item-info-ad-subtitle">Advertisement</div>';
-    jest.advanceTimersByTime(350);
-    expect(audio.muted).toBe(true);
-    expect(posted.some((m) => m.t === 'blocked')).toBe(true);
-
-    document.body.innerHTML = '';
-    jest.advanceTimersByTime(350);
-    expect(audio.muted).toBe(false);
+  afterEach(() => {
+    window.history.pushState({}, '', '/');
+    jest.useRealTimers();
   });
 
-  it('reads now-playing info from the player bar', () => {
-    boot({ app: 'spotify', adblock: true, desktop: true, cosmetic: {} }, ['bridge.js', 'spotify.js']);
+  function mountPlayer(api = {}) {
+    document.body.innerHTML = '<div id="movie_player" class="html5-video-player"><video></video></div>';
+    const p = document.getElementById('movie_player');
+    Object.assign(p, api);
+    const v = p.querySelector('video');
+    Object.defineProperty(v, 'duration', { configurable: true, value: 212 });
+    return { p, v };
+  }
+
+  it('applies the default speed and quality once per video, and always-repeat', () => {
+    boot({ app: 'youtube', adblock: true, defaultSpeed: 1.5, defaultQuality: '720', alwaysRepeat: true, cosmetic: {} }, ['bridge.js', 'youtube.js']);
+    const setRange = jest.fn();
+    const { v } = mountPlayer({
+      setPlaybackRate: jest.fn(),
+      getAvailableQualityLevels: () => ['hd1080', 'large', 'medium', 'auto'],
+      setPlaybackQualityRange: setRange,
+    });
+    jest.advanceTimersByTime(600);
+    expect(v.playbackRate).toBe(1.5);
+    expect(v.loop).toBe(true);
+    // 720p isn't offered, so the best level below it wins.
+    expect(setRange).toHaveBeenCalledWith('large', 'large');
+
+    v.playbackRate = 1; // the user changes it on this video: respected
+    jest.advanceTimersByTime(1000);
+    expect(v.playbackRate).toBe(1);
+  });
+
+  it('picks the best quality at or below the preference', () => {
+    boot({ app: 'youtube', adblock: true, cosmetic: {} }, ['bridge.js', 'youtube.js']);
+    const { pickQuality } = window.__bopboxYouTubeInternals;
+    expect(pickQuality(1080, ['hd2160', 'hd1080', 'hd720'])).toBe('hd1080');
+    expect(pickQuality(1440, ['hd1080', 'hd720'])).toBe('hd1080');
+    expect(pickQuality(144, ['hd720'])).toBeNull();
+  });
+
+  it('shows the Return YouTube Dislike count on the dislike button', async () => {
+    global.fetch = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ dislikes: 2345678 }) }));
+    boot({ app: 'youtube', adblock: true, returnDislike: true, cosmetic: {} }, ['bridge.js', 'youtube.js']);
+    document.body.innerHTML += '<button aria-label="Dislike this video"><svg></svg></button>';
+    jest.advanceTimersByTime(800);
+    for (let i = 0; i < 8; i++) await Promise.resolve(); // let the fetch chain settle
+    jest.advanceTimersByTime(800);
+    expect(global.fetch).toHaveBeenCalledWith('https://returnyoutubedislikeapi.com/votes?videoId=dQw4w9WgXcQ');
+    expect(document.querySelector('.bopbox-dislikes').textContent).toBe('2.3M');
+    delete global.fetch;
+  });
+
+  it('toggles Shorts and card hiding live from the config', () => {
+    boot({ app: 'youtube', adblock: true, hideShorts: false, hideCards: true, cosmetic: {} }, ['bridge.js', 'youtube.js']);
+    const root = document.documentElement;
+    expect(root.classList.contains('bopbox-hide-shorts')).toBe(false);
+    expect(root.classList.contains('bopbox-hide-cards')).toBe(true);
+    Object.assign(window.__bopboxConfig, { hideShorts: true, hideCards: false });
+    jest.advanceTimersByTime(1100);
+    expect(root.classList.contains('bopbox-hide-shorts')).toBe(true);
+    expect(root.classList.contains('bopbox-hide-cards')).toBe(false);
+  });
+
+  it('puts a Settings button in YouTube’s top bar that asks native to open Settings', () => {
+    const posted = boot({ app: 'youtube', adblock: true, cosmetic: {} }, ['bridge.js', 'youtube.js']);
     document.body.innerHTML =
-      '<div data-testid="now-playing-widget"><img src="https://i.scdn.co/image/abc"/>' +
-      '<div data-testid="context-item-info-title">Instant Crush</div>' +
-      '<div data-testid="context-item-info-artist">Daft Punk</div></div>' +
-      '<button data-testid="control-button-skip-forward"></button>';
-    const snap = window.__bopbox._snapshot();
-    expect(snap).toMatchObject({ title: 'Instant Crush', artist: 'Daft Punk', artwork: 'https://i.scdn.co/image/abc' });
-    expect(snap.actions).toContain('nexttrack');
-  });
-
-  it('hides attribute-less upsell buttons in the nav bar but keeps the rest', () => {
-    boot({ app: 'spotify', adblock: true, desktop: true, cosmetic: {} }, ['bridge.js', 'spotify.js']);
-    document.body.innerHTML =
-      '<div data-testid="global-nav-bar"><button id="p">Premium</button><button id="d">Download</button><button id="l">Log in</button></div>';
-    jest.advanceTimersByTime(1600);
-    expect(document.getElementById('p').style.display).toBe('none');
-    expect(document.getElementById('d').style.display).toBe('none');
-    expect(document.getElementById('l').style.display).toBe('');
-  });
-
-  it('sets a zoomed-out viewport for the desktop player', () => {
-    boot({ app: 'spotify', adblock: false, desktop: true, cosmetic: {} }, ['bridge.js', 'spotify.js']);
-    const meta = document.querySelector('meta[name="viewport"]');
-    expect(meta.content).toMatch(/^width=900, initial-scale=/);
+      '<div class="mobile-topbar-header-content"><ytm-topbar-menu-button-renderer><button aria-label="Search YouTube"></button></ytm-topbar-menu-button-renderer></div>';
+    jest.advanceTimersByTime(900);
+    const btn = document.getElementById('bopbox-settings');
+    expect(btn).not.toBeNull();
+    expect(btn.nextElementSibling.tagName.toLowerCase()).toBe('ytm-topbar-menu-button-renderer');
+    btn.click();
+    expect(posted).toContainEqual({ t: 'openSettings' });
+    jest.advanceTimersByTime(900);
+    expect(document.querySelectorAll('#bopbox-settings')).toHaveLength(1);
   });
 });

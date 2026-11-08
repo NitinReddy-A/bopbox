@@ -30,13 +30,6 @@ class MiniPlayerWidgetProvider : AppWidgetProvider() {
   }
 }
 
-/** Home-screen widget: launcher tiles for YouTube, Spotify, search and home. */
-class QuickAccessWidgetProvider : AppWidgetProvider() {
-  override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
-    WidgetUpdater.renderQuick(context, manager, ids)
-  }
-}
-
 /** Receives widget button taps. Falls back to opening the app if nothing is loaded yet. */
 class WidgetActionReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
@@ -59,6 +52,9 @@ object WidgetUpdater {
   const val ACTION_TOGGLE = "com.nitinreddy.bopbox.widget.TOGGLE"
   const val ACTION_NEXT = "com.nitinreddy.bopbox.widget.NEXT"
   const val ACTION_PREVIOUS = "com.nitinreddy.bopbox.widget.PREVIOUS"
+
+  private const val IDLE_TITLE = "Not playing"
+  private const val IDLE_SUBTITLE = "Open Tube to start watching"
 
   private var lastKey: String? = null
 
@@ -89,12 +85,16 @@ object WidgetUpdater {
     val np = PlaybackCoordinator.current
     val views = RemoteViews(context.packageName, R.layout.bopbox_widget_now_playing)
     bindCommon(context, views, np)
-    views.setTextViewText(R.id.bopbox_w_artist, np?.artist?.ifBlank { appLabel(np.appId) } ?: "tap a tile to start the party")
+    val media = np?.takeIf { it.hasMedia }
+    views.setTextViewText(R.id.bopbox_w_app, media?.let { appLabel(it.appId) } ?: "Tube")
+    val artist = media?.artist ?: IDLE_SUBTITLE
+    views.setTextViewText(R.id.bopbox_w_artist, artist)
+    views.setViewVisibility(R.id.bopbox_w_artist, if (artist.isBlank()) View.GONE else View.VISIBLE)
     views.setViewVisibility(R.id.bopbox_w_prev, if (np?.canPrevious == true) View.VISIBLE else View.INVISIBLE)
     views.setViewVisibility(R.id.bopbox_w_next, if (np?.canNext == true) View.VISIBLE else View.INVISIBLE)
     views.setOnClickPendingIntent(R.id.bopbox_w_prev, broadcast(context, ACTION_PREVIOUS))
     views.setOnClickPendingIntent(R.id.bopbox_w_next, broadcast(context, ACTION_NEXT))
-    val art: Bitmap? = np?.artworkUrl?.let(ArtworkLoader::cached)
+    val art: Bitmap? = np?.artworkUrl?.let { ArtworkLoader.cached(it, ArtworkLoader.CORNER_NOW_PLAYING) }
     if (art != null) views.setImageViewBitmap(R.id.bopbox_w_art, art) else views.setImageViewResource(R.id.bopbox_w_art, R.drawable.bopbox_art_placeholder)
     manager.updateAppWidget(ids, views)
   }
@@ -107,29 +107,19 @@ object WidgetUpdater {
     views.setTextViewText(
       R.id.bopbox_w_status,
       when {
-        np == null || !np.hasMedia -> "idle • vibes pending"
-        np.isAd -> "ad detected • yeeting it"
-        np.isPlaying -> "now bopping • ${appLabel(np.appId)}"
-        else -> "paused • ${appLabel(np.appId)}"
+        np == null || !np.hasMedia -> "Not playing"
+        np.isAd -> "Ad playing"
+        np.isPlaying -> "Playing on ${appLabel(np.appId)}"
+        else -> "Paused"
       },
     )
-    val art: Bitmap? = np?.artworkUrl?.let(ArtworkLoader::cached)
-    if (art != null) views.setImageViewBitmap(R.id.bopbox_w_art, art) else views.setImageViewResource(R.id.bopbox_w_art, R.drawable.bopbox_art_placeholder)
-    manager.updateAppWidget(ids, views)
-  }
-
-  fun renderQuick(context: Context, manager: AppWidgetManager, ids: IntArray) {
-    if (ids.isEmpty()) return
-    val views = RemoteViews(context.packageName, R.layout.bopbox_widget_quick)
-    views.setOnClickPendingIntent(R.id.bopbox_q_youtube, activity(context, "bopbox://open/youtube", 10))
-    views.setOnClickPendingIntent(R.id.bopbox_q_spotify, activity(context, "bopbox://open/spotify", 11))
-    views.setOnClickPendingIntent(R.id.bopbox_q_search, activity(context, "bopbox://search", 12))
-    views.setOnClickPendingIntent(R.id.bopbox_q_home, activity(context, "bopbox://open/home", 13))
+    val art: Bitmap? = np?.artworkUrl?.let { ArtworkLoader.cached(it, ArtworkLoader.CORNER_MINI) }
+    if (art != null) views.setImageViewBitmap(R.id.bopbox_w_art, art) else views.setImageViewResource(R.id.bopbox_w_art, R.drawable.bopbox_art_placeholder_mini)
     manager.updateAppWidget(ids, views)
   }
 
   private fun bindCommon(context: Context, views: RemoteViews, np: NowPlaying?) {
-    val title = np?.title?.takeIf { it.isNotBlank() } ?: "Nothing's bopping"
+    val title = np?.title?.takeIf { it.isNotBlank() } ?: IDLE_TITLE
     views.setTextViewText(R.id.bopbox_w_title, title)
     views.setImageViewResource(R.id.bopbox_w_toggle, if (np?.isPlaying == true) R.drawable.bopbox_ic_pause else R.drawable.bopbox_ic_play)
     views.setOnClickPendingIntent(R.id.bopbox_w_toggle, broadcast(context, ACTION_TOGGLE))
@@ -139,7 +129,6 @@ object WidgetUpdater {
 
   private fun appLabel(appId: String) = when (appId) {
     "youtube" -> "YouTube"
-    "spotify" -> "Spotify"
     else -> appId
   }
 

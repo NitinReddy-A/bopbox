@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Bopbox design tokens (dark). Brand and on-accent colours are shared with the light set. -->
+<resources>
+    <color name="bopbox_background">#FF0B0B0C</color>
+    <color name="bopbox_surface">#FF1C1C1E</color>
+    <color name="bopbox_fill">#FF2C2C2E</color>
+    <color name="bopbox_separator">#FF38383A</color>
+    <color name="bopbox_label">#FFF5F5F7</color>
+    <color name="bopbox_label_secondary">#FF98989D</color>
+    <color name="bopbox_label_tertiary">#FF636366</color>
+    <color name="bopbox_accent">#FFFF4E45</color>
+</resources>

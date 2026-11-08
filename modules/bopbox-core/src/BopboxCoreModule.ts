@@ -5,6 +5,8 @@ import type { AdblockStats, AppId, BopboxCoreEvents, MediaCommand, NowPlaying, S
 declare class BopboxCoreModule extends NativeModule<BopboxCoreEvents> {
   getApps(): { id: AppId; name: string; homeUrl: string }[];
   getSettings(): Settings;
+  /** The YouTube link that cold-started the app, if any; cleared once read. */
+  consumeLaunchUrl(): string | null;
   updateSettings(patch: Partial<Settings>): Settings;
   getNowPlaying(): NowPlaying | null;
   control(command: MediaCommand, arg?: number | null): void;

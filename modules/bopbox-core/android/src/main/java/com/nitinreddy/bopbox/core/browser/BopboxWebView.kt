@@ -135,7 +135,7 @@ class BopboxWebView(
     val modeChanged = appliedMode != settings.modeFor(app.id)
     configureSettings(settings)
     installScripts(settings)
-    if (modeChanged) reload()
+    if (modeChanged) reload() else evaluateJavascript(PageScripts.liveUpdate(PageScripts.config(app, settings, cosmetic())), null)
   }
 
   private fun configureSettings(settings: Settings) {
@@ -184,15 +184,16 @@ class BopboxWebView(
 
   // --- Script injection + bridge --------------------------------------------------------
 
+  private fun cosmetic(): Map<String, List<String>> =
+    PageScripts.originsFor(app).associate { o -> val h = o.removePrefix("https://"); h to AdBlocker.cosmeticSelectors(h) }
+
   private fun installScripts(settings: Settings) {
-    val origins = PageScripts.originsFor(app)
-    val cosmetic = origins.associate { o -> val h = o.removePrefix("https://"); h to AdBlocker.cosmeticSelectors(h) }
-    val script = PageScripts.build(app, settings, cosmetic) { name ->
+    val script = PageScripts.build(app, settings, cosmetic()) { name ->
       context.assets.open("bopbox/$name").bufferedReader().use { it.readText() }
     }
     if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
       scriptHandler?.remove()
-      scriptHandler = WebViewCompat.addDocumentStartJavaScript(this, script, origins)
+      scriptHandler = WebViewCompat.addDocumentStartJavaScript(this, script, PageScripts.originsFor(app))
     } else {
       fallbackScript = script
     }
@@ -211,6 +212,7 @@ class BopboxWebView(
         is BridgeMessage.Media -> PlaybackCoordinator.onPageState(msg.state)
         is BridgeMessage.Blocked -> AdBlocker.recordBlocked(msg.count)
         is BridgeMessage.Log -> if (BuildConfig.DEBUG) Log.d(TAG, "[${app.id}] ${msg.text}")
+        BridgeMessage.OpenSettings -> WebViewPool.emitUi(WebViewPool.UI_OPEN_SETTINGS)
         null -> Unit
       }
     }

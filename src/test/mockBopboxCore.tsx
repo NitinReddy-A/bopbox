@@ -25,15 +25,18 @@ type Payload<E extends EventName> = Parameters<BopboxCoreEvents[E]>[0];
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'dark',
   adblockEnabled: true,
+  sponsorBlock: true,
   backgroundPlay: true,
   autoPip: true,
-  sponsorBlock: true,
-  launchTarget: 'home',
+  siteMode: 'mobile',
   filterAutoUpdate: true,
-  'adblock.youtube': true,
-  'adblock.spotify': true,
-  'mode.youtube': 'mobile',
-  'mode.spotify': 'mobile',
+  defaultQuality: 'auto',
+  defaultSpeed: '1',
+  returnDislike: true,
+  hideShorts: false,
+  hideCards: true,
+  swipeControls: true,
+  alwaysRepeat: false,
 };
 
 export const DEFAULT_STATS: AdblockStats = {
@@ -48,7 +51,7 @@ export const DEFAULT_STATS: AdblockStats = {
 
 export function makeNowPlaying(overrides: Partial<NowPlaying> = {}): NowPlaying {
   return {
-    appId: 'spotify',
+    appId: 'youtube',
     title: 'Midnight City',
     artist: 'M83',
     album: 'Hurry Up, We Are Dreaming',
@@ -71,6 +74,7 @@ export const nativeState = {
   nowPlaying: null as NowPlaying | null,
   stats: { ...DEFAULT_STATS },
   inPip: false,
+  launchUrl: null as string | null,
 };
 
 const listeners = new Map<EventName, Set<(payload: never) => void>>();
@@ -83,9 +87,13 @@ export function emit<E extends EventName>(event: E, payload: Payload<E>): void {
 export const BopboxCore = {
   getApps: jest.fn(() => [
     { id: 'youtube' as const, name: 'YouTube', homeUrl: 'https://m.youtube.com/' },
-    { id: 'spotify' as const, name: 'Spotify', homeUrl: 'https://open.spotify.com/' },
   ]),
   getSettings: jest.fn(() => ({ ...nativeState.settings })),
+  consumeLaunchUrl: jest.fn(() => {
+    const url = nativeState.launchUrl;
+    nativeState.launchUrl = null;
+    return url;
+  }),
   updateSettings: jest.fn((patch: Partial<Settings>) => {
     nativeState.settings = { ...nativeState.settings, ...patch };
     return { ...nativeState.settings };
@@ -117,7 +125,7 @@ export type MockBrowser = { [K in keyof BrowserViewRef]: jest.Mock<Promise<void>
 export const browsers = {
   refs: {} as Partial<Record<AppId, MockBrowser>>,
   props: {} as Partial<Record<AppId, BrowserViewProps>>,
-  mounts: { youtube: 0, spotify: 0 } as Record<AppId, number>,
+  mounts: { youtube: 0 } as Record<AppId, number>,
 };
 
 function createMockBrowser(): MockBrowser {
@@ -155,9 +163,10 @@ export function resetBopboxMock(): void {
   nativeState.nowPlaying = null;
   nativeState.stats = { ...DEFAULT_STATS };
   nativeState.inPip = false;
+  nativeState.launchUrl = null;
   listeners.clear();
   browsers.refs = {};
   browsers.props = {};
-  browsers.mounts = { youtube: 0, spotify: 0 };
+  browsers.mounts = { youtube: 0 };
   Object.values(BopboxCore).forEach((fn) => fn.mockClear());
 }
