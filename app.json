@@ -2,7 +2,7 @@
   "expo": {
     "name": "Tube",
     "slug": "personal-bopbox",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "scheme": "bopbox",
     "orientation": "default",
     "icon": "./assets/icon.png",
@@ -13,7 +13,7 @@
     ],
     "android": {
       "package": "com.nitinreddy.tube",
-      "versionCode": 1,
+      "versionCode": 2,
       "adaptiveIcon": {
         "backgroundColor": "#E5002B",
         "foregroundImage": "./assets/android-icon-foreground.png",

@@ -30,7 +30,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoPip: true,
   siteMode: 'mobile',
   filterAutoUpdate: true,
-  defaultQuality: 'auto',
+  defaultQuality: '1080',
   defaultSpeed: '1',
   returnDislike: true,
   hideShorts: false,

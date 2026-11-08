@@ -135,7 +135,7 @@ class BopboxWebView(
     val modeChanged = appliedMode != settings.modeFor(app.id)
     configureSettings(settings)
     installScripts(settings)
-    if (modeChanged) reload() else evaluateJavascript(PageScripts.liveUpdate(PageScripts.config(app, settings, cosmetic())), null)
+    if (modeChanged) reload() else evaluateJavascript(PageScripts.liveUpdate(PageScripts.config(app, settings, cosmetic(), scriptlets())), null)
   }
 
   private fun configureSettings(settings: Settings) {
@@ -184,11 +184,14 @@ class BopboxWebView(
 
   // --- Script injection + bridge --------------------------------------------------------
 
-  private fun cosmetic(): Map<String, List<String>> =
-    PageScripts.originsFor(app).associate { o -> val h = o.removePrefix("https://"); h to AdBlocker.cosmeticSelectors(h) }
+  private fun hosts(): List<String> = PageScripts.originsFor(app).map { it.removePrefix("https://") }
+
+  private fun cosmetic(): Map<String, List<String>> = hosts().associateWith(AdBlocker::cosmeticSelectors)
+
+  private fun scriptlets(): Map<String, List<String>> = hosts().associateWith(AdBlocker::scriptlets)
 
   private fun installScripts(settings: Settings) {
-    val script = PageScripts.build(app, settings, cosmetic()) { name ->
+    val script = PageScripts.build(app, settings, cosmetic(), scriptlets()) { name ->
       context.assets.open("bopbox/$name").bufferedReader().use { it.readText() }
     }
     if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {

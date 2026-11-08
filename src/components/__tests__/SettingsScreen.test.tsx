@@ -51,8 +51,8 @@ describe('Settings', () => {
   it('picks a default video quality', async () => {
     await openSettings();
     await fireEvent.press(screen.getByLabelText('Video quality'));
-    await fireEvent.press(await screen.findByLabelText('Video quality: 1080p'));
-    expect(BopboxCore.updateSettings).toHaveBeenLastCalledWith({ defaultQuality: '1080' });
+    await fireEvent.press(await screen.findByLabelText('Video quality: 720p'));
+    expect(BopboxCore.updateSettings).toHaveBeenLastCalledWith({ defaultQuality: '720' });
   });
 
   it('switches the YouTube layout and the theme with segmented controls', async () => {

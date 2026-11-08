@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import org.json.JSONArray
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.net.HttpURLConnection
@@ -20,7 +21,8 @@ object AdBlocker {
   private const val TAG = "BopboxAdBlocker"
   private const val ASSET_DIR = "bopbox/filters"
   private const val PREFS = "bopbox.adblock"
-  private const val UPDATE_INTERVAL_MS = 4L * 24 * 3600 * 1000
+  /** uBO's quick fixes expire in hours; YouTube changes often, so refresh daily. */
+  private const val UPDATE_INTERVAL_MS = 24L * 3600 * 1000
 
   data class Stats(
     val ready: Boolean,
@@ -105,6 +107,26 @@ object AdBlocker {
     return WebResourceResponse("text/plain", "utf-8", 200, "OK", mapOf("Access-Control-Allow-Origin" to "*"), ByteArrayInputStream(emptyBody))
   }
 
+  /**
+   * uBO scriptlet calls (`##+js(...)` bodies) that apply to [host], exceptions already removed.
+   * The last answer per host is remembered, so the very first page of a cold start (before the
+   * engine has finished loading) still gets its rules.
+   */
+  fun scriptlets(host: String): List<String> {
+    val e = engine
+    if (!::appContext.isInitialized) return e?.scriptletsFor(host).orEmpty()
+    val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    val key = "scriptlets:$host"
+    if (e == null) {
+      val cached = prefs.getString(key, null) ?: return emptyList()
+      return runCatching { JSONArray(cached).let { a -> List(a.length()) { a.getString(it) } } }.getOrDefault(emptyList())
+    }
+    val rules = e.scriptletsFor(host)
+    val encoded = JSONArray(rules).toString()
+    if (prefs.getString(key, null) != encoded) prefs.edit().putString(key, encoded).apply()
+    return rules
+  }
+
   /** Element-hiding CSS selectors for a host (host-specific rules only, generic ones are too heavy). */
   fun cosmeticSelectors(host: String): List<String> = engine?.cosmeticSelectors(host, includeGeneric = false).orEmpty()
 
@@ -130,7 +152,7 @@ object AdBlocker {
     }
   }
 
-  private fun listFiles(): List<String> = listOf(FilterLists.EASYLIST_ASSET, FilterLists.EASYPRIVACY_ASSET, FilterLists.EXTRAS_ASSET)
+  private fun listFiles(): List<String> = FilterLists.BUNDLED_ASSETS
 
   private fun cacheDir(): File = File(appContext.filesDir, "filters").apply { mkdirs() }
 
@@ -161,10 +183,7 @@ object AdBlocker {
     updating = true
     notifyListeners()
     var changed = false
-    val remote = mapOf(
-      FilterLists.EASYLIST_ASSET to FilterLists.EASYLIST_URL,
-      FilterLists.EASYPRIVACY_ASSET to FilterLists.EASYPRIVACY_URL,
-    )
+    val remote = FilterLists.UPDATE_URLS
     for ((name, url) in remote) {
       val text = fetch(url) ?: continue
       if (!FilterLists.looksValid(text)) {

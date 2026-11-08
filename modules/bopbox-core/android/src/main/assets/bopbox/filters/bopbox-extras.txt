@@ -34,8 +34,9 @@
 !
 ! ======================== Spotify (open.spotify.com) ========================
 ! Ad decisioning / ad metadata on the spclient API host (track & playback paths are untouched).
-||spclient.wg.spotify.com/ads/
-||spclient.wg.spotify.com/ad-logic/
+! `$important`: uBO unbreak allows all spclient XHR on spotify.com; these two must still be blocked.
+||spclient.wg.spotify.com/ads/$important
+||spclient.wg.spotify.com/ad-logic/$important
 ! Desktop-client update checks; never needed by the web player.
 ||spclient.wg.spotify.com/desktop-update/
 ! Ad event / impression tracker.

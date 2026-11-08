@@ -14,8 +14,12 @@ data class Settings(
   val autoPip: Boolean = true,
   val siteMode: SiteMode = SiteMode.MOBILE,
   val filterAutoUpdate: Boolean = true,
-  /** Preferred resolution applied to every video ("auto" leaves YouTube's choice alone). */
-  val defaultQuality: String = "auto",
+  /**
+   * Preferred resolution for every video ("auto" leaves YouTube's choice alone). YouTube's mobile
+   * site otherwise starts each video at 240p and climbs slowly, so the default is 1080p, which
+   * the player then starts at directly (falling back to the best level a video has below it).
+   */
+  val defaultQuality: String = "1080",
   /** Playback rate applied to every video, as a string from [SPEEDS]. */
   val defaultSpeed: String = "1",
   val returnDislike: Boolean = true,
@@ -77,6 +81,23 @@ data class Settings(
     val THEMES = setOf("system", "dark", "light")
     val QUALITIES = setOf("auto", "2160", "1440", "1080", "720", "480", "360", "240", "144")
     val SPEEDS = setOf("0.5", "0.75", "1", "1.25", "1.5", "1.75", "2", "2.5", "3")
+
+    /** Layout version of persisted settings; bump it together with a step in [migrate]. */
+    const val VERSION = 2
+    const val VERSION_KEY = "settingsVersion"
+
+    /**
+     * Upgrade values saved by an older version. Version 1 defaulted quality to "auto" (YouTube's
+     * slow 240p start), and saved every field on any change, so "auto" there was not a choice.
+     */
+    fun migrate(stored: Map<String, Any?>): Map<String, Any?> {
+      val version = stored[VERSION_KEY] as? Int ?: 1
+      if (version >= VERSION) return stored
+      val out = stored.toMutableMap()
+      if (out["defaultQuality"] == "auto") out["defaultQuality"] = Settings().defaultQuality
+      out[VERSION_KEY] = VERSION
+      return out
+    }
 
     /** Rebuild from persisted values, falling back to defaults for anything missing or corrupt. */
     fun fromMap(map: Map<String, Any?>): Settings {

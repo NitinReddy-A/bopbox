@@ -42,8 +42,24 @@
       if (t.playerResponse && stripAds(t.playerResponse)) count++;
       if (t.response && t.response.playerResponse && stripAds(t.response.playerResponse)) count++;
       if (t.player && t.player.args && t.player.args.raw_player_response && stripAds(t.player.args.raw_player_response)) count++;
+      count += dropAdReels(t.entries) + dropAdReels(t.reelWatchSequenceResponse && t.reelWatchSequenceResponse.entries);
     }
     return count;
+  }
+
+  /** Shorts feeds mix sponsored reels into `entries`; they are flagged adClientParams.isAd. */
+  function dropAdReels(entries) {
+    if (!Array.isArray(entries)) return 0;
+    var removed = 0;
+    for (var i = entries.length - 1; i >= 0; i--) {
+      var e = entries[i];
+      var ep = e && e.command && e.command.reelWatchEndpoint;
+      if (ep && ep.adClientParams && ep.adClientParams.isAd) {
+        entries.splice(i, 1);
+        removed++;
+      }
+    }
+    return removed;
   }
 
   var stats = { pruned: 0, skipped: 0, segments: 0 };
@@ -76,16 +92,22 @@
       };
     }
 
-    // Initial page data is assigned as a JS literal, not via JSON.parse.
+    // Initial page data is assigned as a JS literal, not via JSON.parse. scriptlets.js may
+    // already trap these names (uBO `set` rules), so chain onto any accessor already there.
     ['ytInitialPlayerResponse', 'ytInitialData'].forEach(function (name) {
-      var stored;
+      var prev = Object.getOwnPropertyDescriptor(window, name);
+      if (prev && !prev.configurable) return;
+      var stored = prev && 'value' in prev ? prev.value : undefined;
       try {
         Object.defineProperty(window, name, {
           configurable: true,
-          get: function () { return stored; },
+          get: function () { return prev && prev.get ? prev.get.call(window) : stored; },
           set: function (v) {
-            var n = prune(v);
-            if (n) { stats.pruned += n; noteBlocked(n); }
+            try {
+              var n = prune(v);
+              if (n) { stats.pruned += n; noteBlocked(n); }
+            } catch (e) {}
+            if (prev && prev.set) prev.set.call(window, v);
             stored = v;
           },
         });
@@ -280,7 +302,44 @@
     return null;
   }
 
+  /**
+   * YouTube's player reads its starting quality from the `yt-player-quality` entry it saves when
+   * someone picks a quality by hand. Writing that entry before the player boots makes every
+   * video start at the chosen quality instead of 240p (and avoids the stall of switching up
+   * mid-playback). This is what ReVanced's "remember video quality" does inside the app.
+   */
+  var STICKY_KEY = 'yt-player-quality';
+  var STICKY_OWNER = 'bopbox-player-quality';
+  var stickyFor = null;
+
+  function rememberQuality() {
+    var wanted = cfg.defaultQuality;
+    if (wanted === stickyFor) return;
+    stickyFor = wanted;
+    try {
+      var ls = window.localStorage;
+      if (!wanted || wanted === 'auto') {
+        if (ls.getItem(STICKY_OWNER)) {
+          ls.removeItem(STICKY_KEY);
+          ls.removeItem(STICKY_OWNER);
+        }
+        return;
+      }
+      var now = Date.now();
+      var q = Number(wanted);
+      ls.setItem(STICKY_KEY, JSON.stringify({
+        data: JSON.stringify({ quality: q, previousQuality: q }),
+        expiration: now + 365 * 24 * 3600 * 1000,
+        creation: now,
+      }));
+      ls.setItem(STICKY_OWNER, wanted);
+    } catch (e) {}
+  }
+
+  rememberQuality();
+
   function tunePlayer() {
+    rememberQuality();
     var p = player();
     var v = p && p.querySelector('video');
     var id = currentVideoId();
@@ -297,7 +356,9 @@
     }
     if (cfg.defaultQuality && cfg.defaultQuality !== 'auto' && p.getAvailableQualityLevels) {
       var q = pickQuality(Number(cfg.defaultQuality), p.getAvailableQualityLevels());
-      if (q) {
+      var current = p.getPlaybackQuality ? p.getPlaybackQuality() : null;
+      // Already there (the sticky entry did its job): switching again would only rebuffer.
+      if (q && q !== current) {
         try {
           if (p.setPlaybackQualityRange) p.setPlaybackQualityRange(q, q);
           if (p.setPlaybackQuality) p.setPlaybackQuality(q);
@@ -507,5 +568,5 @@
   });
 
   window.__bopboxYouTubeStats = stats;
-  window.__bopboxYouTubeInternals = { prune: prune, isAd: isAd, pickQuality: pickQuality, shortCount: shortCount };
+  window.__bopboxYouTubeInternals = { prune: prune, isAd: isAd, pickQuality: pickQuality, shortCount: shortCount, rememberQuality: rememberQuality };
 })();

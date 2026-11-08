@@ -83,6 +83,7 @@ class BridgeAndScriptsTest {
       AppCatalog.YOUTUBE,
       Settings().patched(mapOf("sponsorBlock" to false)),
       mapOf("m.youtube.com" to listOf(".ad")),
+      mapOf("m.youtube.com" to listOf("json-prune, adPlacements")),
     ) { name -> "/*$name*/" }
     val configJson = script.substringAfter("window.__bopboxConfig=").substringBefore(";})();")
     val cfg = JSONObject(configJson)
@@ -90,13 +91,22 @@ class BridgeAndScriptsTest {
     assertTrue(cfg.getBoolean("adblock"))
     assertFalse(cfg.getBoolean("sponsorBlock"))
     assertEquals(".ad", cfg.getJSONObject("cosmetic").getJSONArray("m.youtube.com").getString(0))
-    assertTrue(script.indexOf("/*bridge.js*/") < script.indexOf("/*youtube.js*/"))
+    assertEquals("json-prune, adPlacements", cfg.getJSONObject("scriptlets").getJSONArray("m.youtube.com").getString(0))
+    // The scriptlet runner sits between the bridge and the site script that builds on it.
+    assertTrue(script.indexOf("/*bridge.js*/") < script.indexOf("/*scriptlets.js*/"))
+    assertTrue(script.indexOf("/*scriptlets.js*/") < script.indexOf("/*youtube.js*/"))
   }
 
   @Test fun `cosmetic rules are dropped when adblock is off`() {
-    val cfg = PageScripts.config(AppCatalog.YOUTUBE, Settings().patched(mapOf("adblockEnabled" to false)), mapOf("m.youtube.com" to listOf(".ad")))
+    val cfg = PageScripts.config(
+      AppCatalog.YOUTUBE,
+      Settings().patched(mapOf("adblockEnabled" to false)),
+      mapOf("m.youtube.com" to listOf(".ad")),
+      mapOf("m.youtube.com" to listOf("json-prune, adPlacements")),
+    )
     assertFalse(cfg.getBoolean("adblock"))
     assertEquals(0, cfg.getJSONObject("cosmetic").length())
+    assertEquals(0, cfg.getJSONObject("scriptlets").length())
   }
 
   @Test fun `config carries the player preferences`() {
@@ -114,7 +124,11 @@ class BridgeAndScriptsTest {
 
   @Test fun `live update merges into the running page config`() {
     val js = PageScripts.liveUpdate(JSONObject().put("hideShorts", true))
-    assertEquals("window.__bopboxConfig&&Object.assign(window.__bopboxConfig,{\"hideShorts\":true});", js)
+    assertEquals(
+      "window.__bopboxConfig&&Object.assign(window.__bopboxConfig,{\"hideShorts\":true});" +
+        "window.__bopboxScriptlets&&window.__bopboxScriptlets.sync();",
+      js,
+    )
   }
 
   @Test fun `the settings button message is understood`() {

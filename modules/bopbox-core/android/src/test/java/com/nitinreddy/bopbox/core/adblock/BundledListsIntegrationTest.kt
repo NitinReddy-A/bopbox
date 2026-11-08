@@ -130,6 +130,22 @@ class BundledListsIntegrationTest {
     assertTrue(engine.scriptletsFor("m.youtube.com").any { it.startsWith("json-prune") })
   }
 
+  /** The uBO rules that keep YouTube's mobile site ad-free, as Brave and uBO apply them. */
+  @Test fun youTubeScriptletsComeFromUboLists() {
+    val rules = engine.scriptletsFor("m.youtube.com")
+    println("m.youtube.com scriptlets (${rules.size}):\n  " + rules.joinToString("\n  "))
+    assertTrue(rules.toString(), "set, ytInitialPlayerResponse.adPlacements, undefined" in rules)
+    assertTrue(rules.toString(), "set, ytInitialPlayerResponse.playerAds, undefined" in rules)
+    assertTrue(rules.toString(), rules.any { it.startsWith("json-prune, ") && "playerResponse.adPlacements" in it })
+    assertTrue(rules.toString(), rules.any { it.startsWith("json-prune-fetch-response, ") && "reelWatchEndpoint.adClientParams.isAd" in it })
+    assertTrue(rules.toString(), rules.any { it.startsWith("json-edit-fetch-response, ") && "adSlotRenderer" in it })
+    // Desktop-only rules stay on www.youtube.com.
+    assertFalse(rules.toString(), rules.any { it.startsWith("nano-stb") })
+    assertTrue(engine.scriptletsFor("www.youtube.com").any { it.startsWith("nano-stb") })
+    // Nothing for sites without rules.
+    assertTrue(engine.scriptletsFor("example.org").none { "ytInitialPlayerResponse" in it })
+  }
+
   @Test fun averageMatchTimeIsSmall() {
     val urls = syntheticUrls(10_000)
     val pages = listOf("https://m.youtube.com/watch?v=x", "https://open.spotify.com/", "https://news.example.com/a")

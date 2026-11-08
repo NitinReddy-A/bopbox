@@ -10,8 +10,25 @@ class FilterListsTest {
     assertEquals("https://easylist.to/easylist/easylist.txt", FilterLists.EASYLIST_URL)
     assertEquals("https://easylist.to/easylist/easyprivacy.txt", FilterLists.EASYPRIVACY_URL)
     assertEquals("bopbox/filters/easylist.txt", FilterLists.assetPath(FilterLists.EASYLIST_ASSET))
-    assertEquals(listOf("easylist.txt", "easyprivacy.txt", "bopbox-extras.txt"), FilterLists.BUNDLED_ASSETS)
+    assertEquals(
+      listOf(
+        "easylist.txt",
+        "easyprivacy.txt",
+        "ubo-filters.txt",
+        "ubo-quick-fixes.txt",
+        "ubo-privacy.txt",
+        "ubo-unbreak.txt",
+        "bopbox-extras.txt",
+      ),
+      FilterLists.BUNDLED_ASSETS,
+    )
     assertEquals(FilterLists.EASYPRIVACY_URL, FilterLists.UPDATE_URLS[FilterLists.EASYPRIVACY_ASSET])
+    assertEquals(
+      "https://ublockorigin.github.io/uAssets/filters/quick-fixes.txt",
+      FilterLists.UPDATE_URLS[FilterLists.UBO_QUICK_FIXES_ASSET],
+    )
+    // Every list except our own hand-made extras refreshes from its publisher.
+    assertEquals(FilterLists.BUNDLED_ASSETS - FilterLists.EXTRAS_ASSET, FilterLists.UPDATE_URLS.keys.toList())
   }
 
   @Test fun acceptsAdblockHeader() {

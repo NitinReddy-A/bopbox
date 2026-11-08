@@ -14,7 +14,7 @@ class SettingsTest {
     val s = Settings()
     assertTrue(s.adblockFor("youtube"))
     assertEquals(SiteMode.MOBILE, s.modeFor("youtube"))
-    assertEquals("auto", s.defaultQuality)
+    assertEquals("1080", s.defaultQuality)
     assertEquals("1", s.defaultSpeed)
     assertTrue(s.returnDislike)
     assertTrue(s.swipeControls)
@@ -71,6 +71,20 @@ class SettingsTest {
     val s = Settings.fromMap(mapOf("theme" to 42, "autoPip" to false, "garbage" to "x", "launchTarget" to "home"))
     assertEquals("system", s.theme)
     assertFalse(s.autoPip)
+  }
+
+  @Test fun `version 1 settings move from auto quality to 1080p once`() {
+    val v1 = mapOf<String, Any?>("defaultQuality" to "auto", "hideShorts" to true)
+    val migrated = Settings.migrate(v1)
+    assertEquals("1080", Settings.fromMap(migrated).defaultQuality)
+    assertTrue(Settings.fromMap(migrated).hideShorts)
+    assertEquals(Settings.VERSION, migrated[Settings.VERSION_KEY])
+    // A later, deliberate choice of auto is kept.
+    val v2 = mapOf<String, Any?>("defaultQuality" to "auto", Settings.VERSION_KEY to Settings.VERSION)
+    assertEquals(v2, Settings.migrate(v2))
+    assertEquals("auto", Settings.fromMap(v2).defaultQuality)
+    // Other v1 choices are untouched.
+    assertEquals("720", Settings.fromMap(Settings.migrate(mapOf("defaultQuality" to "720"))).defaultQuality)
   }
 
   @Test fun `catalog is youtube only and resolves its urls`() {

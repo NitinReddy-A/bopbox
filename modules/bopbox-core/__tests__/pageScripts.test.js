@@ -13,6 +13,7 @@ const read = (name) => fs.readFileSync(path.join(ASSETS, name), 'utf8');
 // youtube.js patches globals; keep the pristine versions so every test starts clean.
 const nativeJsonParse = JSON.parse;
 const nativePlay = HTMLMediaElement.prototype.play;
+const nativeResponse = window.Response;
 
 function boot(config, scripts) {
   jest.useFakeTimers();
@@ -28,8 +29,12 @@ function resetWindow() {
   HTMLMediaElement.prototype.play = nativePlay;
   delete window.__bopbox;
   delete window.__bopboxYouTube;
+  delete window.__bopboxScriptlets;
   delete window.__bopboxConfig;
   delete window.ytInitialPlayerResponse;
+  delete window.fetch;
+  window.Response = nativeResponse;
+  window.localStorage.clear();
   document.documentElement.className = '';
   document.head.innerHTML = '';
   document.body.innerHTML = '';
@@ -262,6 +267,31 @@ describe('youtube.js player features', () => {
     expect(v.playbackRate).toBe(1);
   });
 
+  it('starts every video at the preferred quality via YouTube’s own sticky setting', () => {
+    boot({ app: 'youtube', adblock: true, defaultQuality: '1080', cosmetic: {} }, ['bridge.js', 'youtube.js']);
+    const sticky = JSON.parse(window.localStorage.getItem('yt-player-quality'));
+    expect(JSON.parse(sticky.data).quality).toBe(1080);
+    expect(sticky.expiration).toBeGreaterThan(Date.now());
+
+    // Already playing at that quality: no second switch (which would rebuffer).
+    const setRange = jest.fn();
+    mountPlayer({ getAvailableQualityLevels: () => ['hd1080', 'hd720'], getPlaybackQuality: () => 'hd1080', setPlaybackQualityRange: setRange });
+    jest.advanceTimersByTime(600);
+    expect(setRange).not.toHaveBeenCalled();
+
+    // Back to Auto: our entry goes, YouTube decides again.
+    window.__bopboxConfig.defaultQuality = 'auto';
+    jest.advanceTimersByTime(600);
+    expect(window.localStorage.getItem('yt-player-quality')).toBeNull();
+  });
+
+  it('leaves a quality the user picked in YouTube alone when set to Auto', () => {
+    window.localStorage.setItem('yt-player-quality', JSON.stringify({ data: JSON.stringify({ quality: 480 }) }));
+    boot({ app: 'youtube', adblock: true, defaultQuality: 'auto', cosmetic: {} }, ['bridge.js', 'youtube.js']);
+    jest.advanceTimersByTime(600);
+    expect(window.localStorage.getItem('yt-player-quality')).not.toBeNull();
+  });
+
   it('picks the best quality at or below the preference', () => {
     boot({ app: 'youtube', adblock: true, cosmetic: {} }, ['bridge.js', 'youtube.js']);
     const { pickQuality } = window.__bopboxYouTubeInternals;
@@ -312,5 +342,171 @@ describe('youtube.js player features', () => {
     expect(posted).toContainEqual({ t: 'openSettings' });
     jest.advanceTimersByTime(900);
     expect(document.querySelectorAll('#bopbox-settings')).toHaveLength(1);
+  });
+});
+
+describe('scriptlets.js (uBO ##+js rules)', () => {
+  beforeEach(() => {
+    resetWindow();
+    installMediaFakes();
+  });
+  afterEach(() => jest.useRealTimers());
+
+  // jsdom pages run on http://localhost/, so rules are keyed by that host.
+  const withRules = (rules, extra = {}) =>
+    boot(
+      { app: 'youtube', adblock: true, cosmetic: {}, scriptlets: { localhost: rules }, ...extra },
+      ['bridge.js', 'scriptlets.js', 'youtube.js'],
+    );
+
+  // Minimal fetch Response stand-in (jsdom has none).
+  class FakeResponse {
+    constructor(body, init = {}) {
+      this.body = String(body);
+      this.status = init.status ?? 200;
+      this.statusText = init.statusText ?? 'OK';
+      this.headers = init.headers ?? {};
+      this.ok = this.status >= 200 && this.status < 300;
+      this.redirected = false;
+      this.type = 'basic';
+      this.url = init.url ?? '';
+    }
+    clone() {
+      return new FakeResponse(this.body, this);
+    }
+    text() {
+      return Promise.resolve(this.body);
+    }
+    json() {
+      return Promise.resolve(JSON.parse(this.body));
+    }
+  }
+
+  function serve(routes) {
+    window.Response = FakeResponse;
+    window.fetch = jest.fn((url) => {
+      const key = Object.keys(routes).find((k) => String(url).includes(k));
+      return Promise.resolve(new FakeResponse(JSON.stringify(routes[key] ?? {}), { url: String(url) }));
+    });
+  }
+
+  it('parses rule arguments like uBO: quotes, escaped commas, empty slots', () => {
+    withRules([]);
+    const { parseArgs } = window.__bopboxScriptlets;
+    expect(parseArgs(`trusted-rpfr, '"adPlacements"', '"no_ads"', player?`)).toEqual([
+      'trusted-rpfr',
+      '"adPlacements"',
+      '"no_ads"',
+      'player?',
+    ]);
+    expect(parseArgs('json-prune-fetch-response, a.b c, , propsToMatch, url:/x?')).toEqual([
+      'json-prune-fetch-response',
+      'a.b c',
+      '',
+      'propsToMatch',
+      'url:/x?',
+    ]);
+    expect(parseArgs(String.raw`nano-stb.js, /a{2\,4}/, 17000`)).toEqual(['nano-stb', '/a{2,4}/', '17000']);
+  });
+
+  it('set rules strip ads from the initial player response, alongside youtube.js', () => {
+    withRules([
+      'set, ytInitialPlayerResponse.playerAds, undefined',
+      'set, ytInitialPlayerResponse.adPlacements, undefined',
+      'set, ytInitialPlayerResponse.adSlots, undefined',
+    ]);
+    window.ytInitialPlayerResponse = { playerAds: [1], adPlacements: [2], adSlots: [3], videoDetails: { videoId: 'abc' } };
+    const r = window.ytInitialPlayerResponse;
+    expect(r.playerAds).toBeUndefined();
+    expect(r.adPlacements).toBeUndefined();
+    expect(r.adSlots).toBeUndefined();
+    expect(r.videoDetails.videoId).toBe('abc');
+    expect(JSON.parse(JSON.stringify(r))).toEqual({ videoDetails: { videoId: 'abc' } });
+  });
+
+  it('json-prune removes sponsored Shorts from reel feeds and nothing else', () => {
+    withRules(['json-prune, entries.[-].command.reelWatchEndpoint.adClientParams.isAd']);
+    const feed = JSON.parse(
+      JSON.stringify({
+        entries: [
+          { command: { reelWatchEndpoint: { videoId: 'a' } } },
+          { command: { reelWatchEndpoint: { videoId: 'ad', adClientParams: { isAd: true } } } },
+          { command: { reelWatchEndpoint: { videoId: 'b' } } },
+        ],
+      }),
+    );
+    expect(feed.entries.map((e) => e.command.reelWatchEndpoint.videoId)).toEqual(['a', 'b']);
+    expect(window.__bopboxScriptlets.counts.rules).toBe(1);
+  });
+
+  it('json-prune only prunes when every needle path is present', () => {
+    withRules(['json-prune, trackingParams, adSignals']);
+    expect(JSON.parse('{"trackingParams":1}').trackingParams).toBe(1);
+    expect(JSON.parse('{"trackingParams":1,"adSignals":{}}').trackingParams).toBeUndefined();
+  });
+
+  it('json-prune-fetch-response edits matching requests only', async () => {
+    const body = { endpoint: { watchEndpoint: { unserializedPrefetchData: { playerResponse: { adPlacements: [1], ok: 1 } } } } };
+    serve({ '/resolve_url?': body, '/other': body });
+    withRules([
+      'json-prune-fetch-response, endpoint.watchEndpoint.unserializedPrefetchData.playerResponse.adPlacements, , propsToMatch, /resolve_url?',
+    ]);
+    const pruned = await (await window.fetch('https://m.youtube.com/youtubei/v1/navigation/resolve_url?prettyPrint=false')).json();
+    expect(pruned.endpoint.watchEndpoint.unserializedPrefetchData.playerResponse).toEqual({ ok: 1 });
+    const untouched = await (await window.fetch('https://m.youtube.com/other')).json();
+    expect(untouched.endpoint.watchEndpoint.unserializedPrefetchData.playerResponse.adPlacements).toEqual([1]);
+  });
+
+  it('json-edit-fetch-response drops ad slots from watch-page item sections', async () => {
+    serve({
+      '/get_watch': [
+        {
+          response: {
+            a: { itemSectionRenderer: { contents: [{ videoRenderer: 1 }, { adSlotRenderer: { x: 1 } }, { videoRenderer: 2 }] } },
+            b: { itemSectionRenderer: { contents: [{ adSlotRenderer: {} }] } },
+          },
+        },
+      ],
+    });
+    withRules(['json-edit-fetch-response, ..itemSectionRenderer.contents.*[?.adSlotRenderer], propsToMatch, /get_watch']);
+    const data = await (await window.fetch('https://m.youtube.com/youtubei/v1/get_watch?prettyPrint=false')).json();
+    expect(data[0].response.a.itemSectionRenderer.contents).toEqual([{ videoRenderer: 1 }, { videoRenderer: 2 }]);
+    expect(data[0].response.b.itemSectionRenderer.contents).toEqual([]);
+  });
+
+  it('trusted-replace-fetch-response rewrites matching bodies as text', async () => {
+    serve({ 'player?': { adPlacements: [1], keep: true } });
+    withRules([`trusted-rpfr, '"adPlacements"', '"no_ads"', player?`], { adblock: true });
+    const data = await (await window.fetch('https://www.youtube.com/youtubei/v1/player?key=1')).json();
+    expect(data).toEqual({ no_ads: [1], keep: true });
+  });
+
+  it('JSON paths: filters, wildcards, and assignments for trusted rules only', () => {
+    withRules([]);
+    const { compileJsonPath, applyJsonPath, run } = window.__bopboxScriptlets;
+    const obj = { list: [{ kind: 'ad', v: 1 }, { kind: 'video', v: 2 }], deep: { x: { kind: 'ad' } } };
+    expect(applyJsonPath(compileJsonPath('.list[?.kind=="ad"]'), obj)).toBe(1);
+    expect(obj.list).toEqual([{ kind: 'video', v: 2 }]);
+    expect(applyJsonPath(compileJsonPath('..kind=1'), obj)).toBe(2);
+    expect(obj.deep.x.kind).toBe(1);
+    expect(compileJsonPath('.a[')).toBeNull();
+    expect(run('json-edit, .a=1')).toBe(false);
+    expect(run('trusted-json-edit, .a=1')).toBe(true);
+  });
+
+  it('skips scriptlets it does not implement, and installs late rules once', () => {
+    withRules([String.raw`rmnt, script, window\,"fetch"`, 'no-xhr-if, /ads/']);
+    expect(window.__bopboxScriptlets.counts.rules).toBe(0);
+    window.__bopboxConfig.scriptlets = { localhost: ['json-prune, adPlacements'] };
+    window.__bopboxScriptlets.sync();
+    window.__bopboxScriptlets.sync();
+    expect(window.__bopboxScriptlets.counts.rules).toBe(1);
+    expect(JSON.parse('{"adPlacements":[1],"a":1}')).toEqual({ a: 1 });
+  });
+
+  it('does nothing while ad blocking is off', () => {
+    withRules(['json-prune, keepme'], { adblock: false });
+    expect(JSON.parse('{"keepme":1}')).toEqual({ keepme: 1 });
+    expect(window.__bopboxScriptlets.counts.rules).toBe(0);
   });
 });

@@ -4,21 +4,44 @@ package com.nitinreddy.bopbox.core.adblock
 object FilterLists {
   const val EASYLIST_URL = "https://easylist.to/easylist/easylist.txt"
   const val EASYPRIVACY_URL = "https://easylist.to/easylist/easyprivacy.txt"
+  private const val UBO = "https://ublockorigin.github.io/uAssets/filters"
 
   /** Asset directory (relative to the APK assets root). */
   const val ASSET_DIR = "bopbox/filters"
   const val EASYLIST_ASSET = "easylist.txt"
   const val EASYPRIVACY_ASSET = "easyprivacy.txt"
-  /** Hand-curated YouTube / Spotify rules; not updated remotely. */
+  /** Hand-curated YouTube rules; not updated remotely. */
   const val EXTRAS_ASSET = "bopbox-extras.txt"
 
+  /**
+   * uBlock Origin's own lists, the ones Brave also ships by default. They carry the scriptlet
+   * rules that keep up with YouTube's ad changes, and the unbreak exceptions that keep everything
+   * else working exactly as it would without a blocker.
+   */
+  const val UBO_FILTERS_ASSET = "ubo-filters.txt"
+  const val UBO_QUICK_FIXES_ASSET = "ubo-quick-fixes.txt"
+  const val UBO_PRIVACY_ASSET = "ubo-privacy.txt"
+  const val UBO_UNBREAK_ASSET = "ubo-unbreak.txt"
+
   /** All bundled list asset names, in load order. */
-  val BUNDLED_ASSETS: List<String> = listOf(EASYLIST_ASSET, EASYPRIVACY_ASSET, EXTRAS_ASSET)
+  val BUNDLED_ASSETS: List<String> = listOf(
+    EASYLIST_ASSET,
+    EASYPRIVACY_ASSET,
+    UBO_FILTERS_ASSET,
+    UBO_QUICK_FIXES_ASSET,
+    UBO_PRIVACY_ASSET,
+    UBO_UNBREAK_ASSET,
+    EXTRAS_ASSET,
+  )
 
   /** Bundled lists that can be refreshed from the network: asset name -> update URL. */
   val UPDATE_URLS: Map<String, String> = mapOf(
     EASYLIST_ASSET to EASYLIST_URL,
     EASYPRIVACY_ASSET to EASYPRIVACY_URL,
+    UBO_FILTERS_ASSET to "$UBO/filters.txt",
+    UBO_QUICK_FIXES_ASSET to "$UBO/quick-fixes.txt",
+    UBO_PRIVACY_ASSET to "$UBO/privacy.txt",
+    UBO_UNBREAK_ASSET to "$UBO/unbreak.txt",
   )
 
   /** Asset path for [name], e.g. `bopbox/filters/easylist.txt`. */
@@ -36,7 +59,8 @@ object FilterLists {
       head.contains("<head>") || head.contains("<body")
     ) return false
     val ruleLines = countRuleLines(text, limit = 1001)
-    if (head.take(512).contains("[adblock")) return ruleLines > 0
+    // An ABP header or the "! Title:" line every EasyList / uBO list opens with.
+    if (head.take(512).contains("[adblock") || head.startsWith("! title:")) return ruleLines > 0
     return ruleLines > 1000
   }
 

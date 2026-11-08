@@ -18,7 +18,15 @@ object SettingsStore {
   fun init(context: Context) {
     if (::prefs.isInitialized) return
     prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    current = Settings.fromMap(prefs.all)
+    val stored = prefs.all
+    val migrated = Settings.migrate(stored)
+    current = Settings.fromMap(migrated)
+    if (migrated != stored) {
+      prefs.edit().apply {
+        putInt(Settings.VERSION_KEY, Settings.VERSION)
+        (migrated["defaultQuality"] as? String)?.let { putString("defaultQuality", it) }
+      }.apply()
+    }
   }
 
   fun update(patch: Map<String, Any?>): Settings {
