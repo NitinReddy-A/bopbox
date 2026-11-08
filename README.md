@@ -14,14 +14,14 @@ redistribute Google's YouTube APK.
 
 | Feature | What it does |
 |---|---|
-| **No ads** | EasyList + EasyPrivacy (auto-updating), YouTube player-response pruning, auto-skip for anything that slips through, promo and upsell cards hidden |
+| **No ads** | Blocks the way Brave and uBlock Origin do: EasyList, EasyPrivacy and uBO's own lists (refreshed daily), including uBO's YouTube scriptlet rules that strip ads from player responses and Shorts feeds. Auto-skip for anything that slips through; promo and upsell cards hidden. Everything else on the page stays exactly as YouTube serves it |
 | **Background play** | Keeps playing after you leave the app, with the screen off, or after you swipe it away |
 | **Picture in picture** | Videos float when you go home |
 | **Media controls** | Notification, lock screen, Bluetooth and headset buttons (Media3 `MediaSession`) |
 | **SponsorBlock** | Skips sponsor reads, self-promos and subscribe nags |
 | **Return YouTube Dislike** | Dislike counts back on the dislike button |
 | **Playback speed** | A default speed for every video, up to 3× |
-| **Video quality** | A default resolution, picking the best available at or below it |
+| **Video quality** | Videos and Shorts start at 1080p by default (or your choice) instead of YouTube's 240p ramp-up, picking the best available at or below it |
 | **Swipe controls** | In fullscreen, swipe the left side for brightness and the right side for volume |
 | **Always repeat** | Loops every video |
 | **Hide Shorts** | Removes Shorts shelves, cards and the Shorts tab |
@@ -44,8 +44,9 @@ React Native shell (Expo Router, TypeScript)
         │  BopboxCore module API + events
 modules/bopbox-core (Kotlin)
   BopboxWebView: request interception → FilterEngine, document-start scripts
-    bridge.js  media session capture, background-play shims, command routing
-    youtube.js ad pruning/skipping, SponsorBlock, dislikes, speed, quality, Shorts, settings button
+    bridge.js     media session capture, background-play shims, command routing
+    scriptlets.js uBO `##+js` rules for the page's host (set, json-prune, json-edit, ...)
+    youtube.js    ad pruning/skipping, SponsorBlock, dislikes, speed, quality, Shorts, settings button
   SwipeControlsLayout: fullscreen brightness/volume gestures
   PlaybackCoordinator → WebViewPlayer (Media3) → PlaybackService (MediaSession)
   PipController, widgets, incoming YouTube links
@@ -67,4 +68,6 @@ Kotlin unit tests: `cd android && ./gradlew :bopbox-core:testDebugUnitTest` afte
 
 ## License
 
-MIT, see [LICENSE](LICENSE). Bundled filter lists are © their authors (EasyList, dual GPLv3 / CC BY-SA).
+MIT, see [LICENSE](LICENSE). Bundled filter lists are © their authors: EasyList and EasyPrivacy
+(dual GPLv3 / CC BY-SA) and uBlock Origin's uAssets lists (GPLv3). `scriptlets.js` is written
+from uBO's documented scriptlet behaviour, not copied from its source.

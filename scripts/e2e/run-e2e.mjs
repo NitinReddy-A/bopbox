@@ -191,6 +191,11 @@ async function main() {
   }
   yt = await connect('youtube.com');
   await waitFor(() => yt.evaluate('document.readyState === "complete"'), { label: 'youtube reload', timeout: 60000 });
+  const scriptletRules = await waitFor(() => yt.evaluate('(window.__bopboxScriptlets && window.__bopboxScriptlets.counts.rules) || 0'), {
+    label: 'uBO scriptlets',
+    timeout: 30000,
+  }).catch(() => 0);
+  check('uBO scriptlet rules installed for m.youtube.com', scriptletRules >= 8, `rules=${scriptletRules}`);
 
   // Blocked requests get an empty 200 with permissive CORS; a real cross-origin response would fail CORS.
   const adBody = await yt.evaluate(
@@ -218,6 +223,10 @@ async function main() {
     await yt.evaluate('!(window.ytInitialPlayerResponse && (ytInitialPlayerResponse.adPlacements || ytInitialPlayerResponse.playerAds))'),
   );
   check('no ad currently showing', await yt.evaluate('!window.__bopboxYouTubeInternals.isAd()'));
+  const quality = await yt.evaluate(
+    '(function(){var p=document.getElementById("movie_player"); var l=p.getAvailableQualityLevels(); return {q:p.getPlaybackQuality(), want:window.__bopboxYouTubeInternals.pickQuality(1080,l), h:document.querySelector("video").videoHeight};})()',
+  );
+  check('video plays at 1080p (or the best it offers below)', quality.q === quality.want, JSON.stringify(quality));
   screenshot('02-youtube-playing');
 
   // --- MediaSession + notification -----------------------------------------------------------
