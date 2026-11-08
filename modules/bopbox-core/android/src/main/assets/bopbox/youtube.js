@@ -312,10 +312,17 @@
   // Return YouTube Dislike: the public count, shown on the dislike button.
   // ---------------------------------------------------------------------------------------
   var dislikes = { id: null, count: null };
-  var compact =
-    typeof Intl !== 'undefined' && Intl.NumberFormat
-      ? new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 })
-      : { format: String };
+  var hasIntl = typeof Intl !== 'undefined' && Intl.NumberFormat;
+  var compactFine = hasIntl ? new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }) : null;
+  var compactWhole = hasIntl ? new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 0 }) : null;
+
+  /** YouTube-style short counts that fit the button: 1.2K, 48K, 522K, 2.3M. */
+  function shortCount(n) {
+    if (!hasIntl) return String(n);
+    var digits = String(Math.floor(Math.abs(n))).length;
+    // Three significant digits at most: 521,600 -> "522K", 52,160 -> "52K", 2,345,678 -> "2.3M".
+    return (digits % 3 === 0 || digits % 3 === 2) && digits > 3 ? compactWhole.format(n) : compactFine.format(n);
+  }
 
   function dislikeButton() {
     var buttons = document.querySelectorAll('button[aria-label]');
@@ -349,11 +356,16 @@
     var btn = dislikeButton();
     if (!btn) return;
     var label = btn.querySelector('.bopbox-dislikes');
-    var text = compact.format(dislikes.count);
+    var text = shortCount(dislikes.count);
     if (!label) {
       label = document.createElement('span');
       label.className = 'bopbox-dislikes';
       btn.appendChild(label);
+      // YouTube sizes the icon-only dislike button to its icon; let it grow for the count.
+      btn.style.width = 'auto';
+      btn.style.minWidth = 'auto';
+      btn.style.paddingRight = '12px';
+      btn.style.overflow = 'visible';
     }
     if (label.textContent !== text) label.textContent = text;
   }
@@ -421,8 +433,22 @@
     return svg;
   }
 
+  /** YouTube's own search button in the header bar (not the hidden one inside the search box). */
+  function headerSearchButton(header) {
+    var selectors = ['button[aria-label="Search YouTube"]', 'button.topbar-button-search-button', 'button[aria-label*="Search" i]'];
+    for (var i = 0; i < selectors.length; i++) {
+      var found = header.querySelectorAll(selectors[i]);
+      for (var j = 0; j < found.length; j++) {
+        if (!found[j].closest('yt-searchbox') && found[j].id !== 'bopbox-settings') return found[j];
+      }
+    }
+    return null;
+  }
+
   function injectSettingsButton() {
-    if (document.getElementById('bopbox-settings')) return;
+    var existing = document.getElementById('bopbox-settings');
+    if (existing && !existing.closest('yt-searchbox')) return;
+    if (existing) existing.remove(); // landed inside the collapsed search box: re-home it
     var header = document.querySelector('ytm-mobile-topbar-renderer header, header.mobile-topbar-header');
     if (!header) return;
     var btn = document.createElement('button');
@@ -439,7 +465,7 @@
       B.post({ t: 'openSettings' });
     });
     // YouTube A/B-tests its header: put the button just before its search button, wherever that is.
-    var search = header.querySelector('button[aria-label="Search YouTube"], button.topbar-button-search-button, button[aria-label*="Search" i]');
+    var search = headerSearchButton(header);
     var host = search && (search.closest('ytm-topbar-menu-button-renderer') || search);
     if (host && host.parentNode) host.parentNode.insertBefore(btn, host);
     else header.appendChild(btn);
@@ -481,5 +507,5 @@
   });
 
   window.__bopboxYouTubeStats = stats;
-  window.__bopboxYouTubeInternals = { prune: prune, isAd: isAd, pickQuality: pickQuality };
+  window.__bopboxYouTubeInternals = { prune: prune, isAd: isAd, pickQuality: pickQuality, shortCount: shortCount };
 })();

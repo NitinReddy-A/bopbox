@@ -279,6 +279,8 @@ describe('youtube.js player features', () => {
     jest.advanceTimersByTime(800);
     expect(global.fetch).toHaveBeenCalledWith('https://returnyoutubedislikeapi.com/votes?videoId=dQw4w9WgXcQ');
     expect(document.querySelector('.bopbox-dislikes').textContent).toBe('2.3M');
+    const { shortCount } = window.__bopboxYouTubeInternals;
+    expect([shortCount(950), shortCount(1234), shortCount(52160), shortCount(521600)]).toEqual(['950', '1.2K', '52K', '522K']);
     delete global.fetch;
   });
 
@@ -298,6 +300,7 @@ describe('youtube.js player features', () => {
     // The header layout YouTube currently serves: buttons are direct children of <header>.
     document.body.innerHTML =
       '<ytm-mobile-topbar-renderer><header class="mobile-topbar-header"><ytm-home-logo></ytm-home-logo>' +
+      '<yt-searchbox><div><button aria-label="Search"></button></div></yt-searchbox>' +
       '<div class="mobile-topbar-header-content"></div><button class="topbar-button-search-button" aria-label="Search YouTube"></button>' +
       '<button aria-label="More options"></button></header></ytm-mobile-topbar-renderer>';
     jest.advanceTimersByTime(900);
