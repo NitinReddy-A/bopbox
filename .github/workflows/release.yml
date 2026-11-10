@@ -1,0 +1,97 @@
+# Builds the signed APK on EAS and publishes it as a GitHub pre-release.
+#
+# Runs when a push to `tube` changes the version in app.json (merging a release PR does it),
+# or by hand from the Actions tab. A version that already has a release is left alone, so
+# re-running is always safe.
+#
+# One-time setup: add a repository secret named EXPO_TOKEN (expo.dev -> Account settings ->
+# Access tokens), under Settings -> Secrets and variables -> Actions.
+name: Release
+
+on:
+  push:
+    branches: [tube]
+    paths: [app.json]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ github.token }}
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the version
+        id: meta
+        run: |
+          version=$(node -p "require('./app.json').expo.version")
+          tag="v${version}-tube"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "apk=tube-v${version}.apk" >> "$GITHUB_OUTPUT"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists; nothing to do."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check the Expo token
+        if: steps.meta.outputs.exists == 'false'
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::Add a repository secret named EXPO_TOKEN (expo.dev -> Account settings -> Access tokens), then re-run this job."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.meta.outputs.exists == 'false'
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        if: steps.meta.outputs.exists == 'false'
+        run: npm ci
+
+      - name: Test
+        if: steps.meta.outputs.exists == 'false'
+        run: |
+          npm test
+          npm run typecheck
+
+      # Outputs go to the runner's temp folder: EAS uploads the working tree as it is.
+      - name: Build on EAS
+        if: steps.meta.outputs.exists == 'false'
+        run: |
+          npx --yes eas-cli@latest build --platform android --profile preview \
+            --non-interactive --wait --json \
+            --message "${{ steps.meta.outputs.tag }}" > "$RUNNER_TEMP/build.json"
+          node scripts/release/artifact-url.mjs "$RUNNER_TEMP/build.json" > "$RUNNER_TEMP/artifact-url.txt"
+          echo "Build artifact: $(cat "$RUNNER_TEMP/artifact-url.txt")"
+
+      - name: Download the APK
+        if: steps.meta.outputs.exists == 'false'
+        working-directory: ${{ runner.temp }}
+        run: |
+          curl -sSfL --retry 3 --max-time 600 -o "${{ steps.meta.outputs.apk }}" "$(cat artifact-url.txt)"
+          ls -la "${{ steps.meta.outputs.apk }}"
+          sha256sum "${{ steps.meta.outputs.apk }}" | tee apk.sha256
+
+      - name: Publish the release
+        if: steps.meta.outputs.exists == 'false'
+        run: |
+          node scripts/release/notes.mjs "${{ steps.meta.outputs.version }}" "$(cut -d' ' -f1 "$RUNNER_TEMP/apk.sha256")" > "$RUNNER_TEMP/notes.md"
+          title=$(node scripts/release/notes.mjs "${{ steps.meta.outputs.version }}" --title)
+          gh release create "${{ steps.meta.outputs.tag }}" "$RUNNER_TEMP/${{ steps.meta.outputs.apk }}" \
+            --target "$GITHUB_SHA" --prerelease --title "$title" --notes-file "$RUNNER_TEMP/notes.md"
