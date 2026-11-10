@@ -22,7 +22,7 @@ redistribute Google's YouTube APK.
 | **Return YouTube Dislike** | Dislike counts back on the dislike button |
 | **Playback speed** | A default speed for every video, up to 3× |
 | **Video quality** | Videos and Shorts start at 1080p by default (or your choice) instead of YouTube's 240p ramp-up, picking the best available at or below it. On slow or metered connections the start is capped lower so the first frame is not held up |
-| **Miniplayer** | Drag a playing video down (or press back) and it shrinks into a floating player while you keep browsing; tap to expand, drag to move, fling it away to close |
+| **Miniplayer** | Drag a video down (or press back while it plays) and it shrinks into a floating player while you keep browsing; tap to expand, drag to move, fling it away to close. Back on a paused video just goes back |
 | **App gestures** | Swipe the player up for fullscreen, press and hold for 2× speed, double tap a Short to like it |
 | **Swipe controls** | In fullscreen, swipe the left side for brightness and the right side for volume |
 | **Always repeat** | Videos replay when they end (on by default); Shorts always loop |

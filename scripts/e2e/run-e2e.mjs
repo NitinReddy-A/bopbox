@@ -310,6 +310,7 @@ async function main() {
   await sleep(1500);
   check('videos replay when they end (Always repeat)', await yt3.evaluate('document.querySelector("#movie_player video").loop === true'));
   check('gesture script is active on the watch page', (await mode()) === 'full', await mode());
+  check('player container is the one the gestures expect', await yt3.evaluate('!!document.getElementById("player-container-id")'));
 
   // Android back on a playing video: it shrinks into the miniplayer and keeps playing.
   shell('input keyevent KEYCODE_BACK');
@@ -321,6 +322,10 @@ async function main() {
     { label: 'browse frame', timeout: 20000 },
   ).catch(() => false);
   check('YouTube loads behind the miniplayer', !!browse, String(browse));
+  check(
+    'miniplayer did not have to fall back to floating over the watch page',
+    !(await yt3.evaluate('document.documentElement.classList.contains("bopbox-mini-solo")')),
+  );
   screenshot('05-miniplayer');
   check('still on the watch page (same player, no reload)', (await yt3.evaluate('location.href')).includes(VIDEO_ID));
   await yt3.evaluate('window.__bopboxGesturesInternals.expand()');

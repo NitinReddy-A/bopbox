@@ -706,7 +706,8 @@ describe('gestures.js', () => {
     window.history.pushState({}, '', '/results?search_query=cats');
     const posted = boot({ app: 'youtube', miniplayer: true, cosmetic: {} }, SCRIPTS);
     jest.advanceTimersByTime(500); // remembers the page the video was opened from
-    const { box } = mountWatch();
+    const { box, video } = mountWatch();
+    video.play();
     jest.advanceTimersByTime(500);
 
     expect(window.__bopbox.back()).toBe('handled');
@@ -816,6 +817,7 @@ describe('gestures.js', () => {
     expect(document.documentElement.classList.contains('bopbox-mini-on')).toBe(false);
 
     cfg.miniplayer = true; // switched on live from Settings
+    video.play();
     jest.advanceTimersByTime(500);
     expect(window.__bopbox.back()).toBe('handled');
   });
@@ -823,13 +825,127 @@ describe('gestures.js', () => {
   it('back is left to the app on pages without a video', () => {
     boot({ app: 'youtube', miniplayer: true, cosmetic: {} }, SCRIPTS);
     expect(window.__bopbox.back()).toBe('none');
-    mountShort();
+    mountShort().video.play();
     expect(window.__bopbox.back()).toBe('none');
+  });
+
+  it('back only keeps a video that is playing: paused or finished, it goes back a page', () => {
+    boot({ app: 'youtube', miniplayer: true, cosmetic: {} }, SCRIPTS);
+    const { video } = mountWatch();
+    jest.advanceTimersByTime(500);
+    expect(window.__bopbox.back()).toBe('none'); // not started yet
+    video.play();
+    video.pause();
+    expect(window.__bopbox.back()).toBe('none');
+    expect(G().mode()).toBe('full');
+    video.play();
+    Object.defineProperty(video, 'ended', { configurable: true, value: true });
+    expect(window.__bopbox.back()).toBe('none');
+    delete video.ended;
+    expect(window.__bopbox.back()).toBe('handled');
+  });
+
+  it('finds the player even if YouTube renames its container, the way Brave looks for it', () => {
+    boot({ app: 'youtube', miniplayer: true, cosmetic: {} }, SCRIPTS);
+    window.history.pushState({}, '', '/watch?v=dQw4w9WgXcQ');
+    document.body.innerHTML = '<ytm-player><div id="movie_player" class="html5-video-player"><video></video></div></ytm-player>';
+    const box = document.querySelector('ytm-player');
+    box.getBoundingClientRect = () => rect(0, 48, VIEW.w, 225);
+    document.querySelector('video').play();
+    jest.advanceTimersByTime(500);
+    expect(window.__bopbox.back()).toBe('handled');
+    jest.advanceTimersByTime(400);
+    expect(G().mode()).toBe('mini');
+    expect(box.hasAttribute('data-bopbox-player')).toBe(true);
+    expect(box.style.transform).toMatch(/^translate3d\(.+\) scale\(0\.\d+\)$/);
+    // The styles address it by that mark as well as by the usual id.
+    expect(document.getElementById('bopbox-gestures').textContent).toContain(':is(#player-container-id,[data-bopbox-player])');
+  });
+
+  it('if YouTube will not load in the frame, the miniplayer floats over the watch page instead', () => {
+    boot({ app: 'youtube', miniplayer: true, cosmetic: {} }, SCRIPTS);
+    const { video } = mountWatch();
+    video.play();
+    jest.advanceTimersByTime(500);
+    window.__bopbox.back();
+    jest.advanceTimersByTime(400);
+    // The frame "loads" without Tube's scripts in it: an error page, or a refusal.
+    frame().dispatchEvent(new Event('load'));
+    expect(frame()).toBeNull();
+    expect(G().mode()).toBe('mini');
+    const cls = document.documentElement.classList;
+    expect(cls.contains('bopbox-mini-solo')).toBe(true);
+    // Nothing behind to walk back through, so back is a normal back.
+    expect(window.__bopbox.back()).toBe('none');
+    // Closing puts the paused video back in its place rather than leaving an empty page.
+    document.querySelector('#bopbox-mini-ui .bopbox-close').click();
+    expect(G().mode()).toBe('full');
+    expect(video.paused).toBe(true);
+    expect(cls.contains('bopbox-mini') || cls.contains('bopbox-mini-solo')).toBe(false);
+
+    // From then on no frame is created; picking a related video drops the miniplayer.
+    video.play();
+    expect(window.__bopbox.back()).toBe('handled');
+    jest.advanceTimersByTime(400);
+    expect(frame()).toBeNull();
+    expect(cls.contains('bopbox-mini-solo')).toBe(true);
+    window.history.pushState({}, '', '/watch?v=aaaaaaaaaaa');
+    jest.advanceTimersByTime(500);
+    expect(G().mode()).toBe('full');
+  });
+
+  it('finds the Short’s like button from YouTube’s components, its label, or its position', () => {
+    boot({ app: 'youtube', cosmetic: {} }, SCRIPTS);
+    window.history.pushState({}, '', '/shorts/dQw4w9WgXcQ');
+    const place = () => { for (const b of document.querySelectorAll('button')) b.getBoundingClientRect = () => rect(340, 400, 48, 48); };
+
+    // Mobile markup: a like/dislike pair inside ytm-like-button-renderer, label "100 likes".
+    document.body.innerHTML =
+      '<ytm-reel-video-renderer video-id="other"><ytm-like-button-renderer><like-button-view-model><button id="wrong" aria-pressed="false"></button></like-button-view-model></ytm-like-button-renderer></ytm-reel-video-renderer>' +
+      '<ytm-reel-video-renderer is-active video-id="dQw4w9WgXcQ"><ytm-like-button-renderer>' +
+      '<like-button-view-model><button id="a" aria-label="100 likes" aria-pressed="false"></button></like-button-view-model>' +
+      '<dislike-button-view-model><button aria-label="Dislike" aria-pressed="false"></button></dislike-button-view-model>' +
+      '</ytm-like-button-renderer></ytm-reel-video-renderer>';
+    place();
+    expect(G().likeButton().id).toBe('a'); // the Short on screen, not a neighbour in the feed
+
+    // Older markup: both buttons directly in the renderer, dislike told apart by its label.
+    document.body.innerHTML = '<ytm-like-button-renderer><button aria-label="Dislike this video"></button><button id="b" aria-label="like this video"></button></ytm-like-button-renderer>';
+    place();
+    expect(G().likeButton().id).toBe('b');
+
+    // No known component at all: the label decides.
+    document.body.innerHTML = '<div><button aria-label="Share"></button><button id="c" aria-label="1.2K likes"></button></div>';
+    place();
+    expect(G().likeButton().id).toBe('c');
+
+    // Another language, unknown components: the first toggle button is the like button.
+    document.body.innerHTML = '<div><button aria-label="Teilen"></button><button id="d" aria-label="Mag ich" aria-pressed="false"></button><button aria-label="Mag ich nicht" aria-pressed="false"></button></div>';
+    place();
+    expect(G().likeButton().id).toBe('d');
+
+    document.body.innerHTML = '<div><button aria-label="Share"></button></div>';
+    place();
+    expect(G().likeButton()).toBeNull();
+  });
+
+  it('fullscreen falls back to the player API when YouTube’s button is not there', () => {
+    boot({ app: 'youtube', miniplayer: true, cosmetic: {} }, SCRIPTS);
+    const { video } = mountWatch();
+    document.querySelector('.fullscreen-icon').remove();
+    const toggleFullscreen = jest.fn();
+    document.getElementById('movie_player').toggleFullscreen = toggleFullscreen;
+    jest.advanceTimersByTime(500);
+    touch('touchstart', video, 200, 200);
+    touch('touchmove', video, 200, 150);
+    touch('touchend', video, 200, 110);
+    jest.advanceTimersByTime(300);
+    expect(toggleFullscreen).toHaveBeenCalledTimes(1);
   });
 
   it('a video picked behind the miniplayer opens in the main page; the same one just expands', () => {
     boot({ app: 'youtube', miniplayer: true, cosmetic: {} }, SCRIPTS);
-    mountWatch();
+    mountWatch().video.play();
     window.__bopbox.back();
     jest.advanceTimersByTime(400);
     const followed = [];
