@@ -7,7 +7,8 @@
  * Drives the real app through adb + Chrome DevTools Protocol on the app's WebViews and verifies:
  * script injection, network ad blocking, YouTube ad pruning, playback, the MediaSession and its
  * notification, transport control from the system, background playback after HOME, PiP,
- * the Tube features (settings button, dislikes, speed, Shorts hiding), shared links, and widgets.
+ * the Tube features (settings button, dislikes, speed, Shorts hiding), video start-up time, replay,
+ * the miniplayer (back and drag), shared links, and widgets.
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -298,6 +299,52 @@ async function main() {
   check('settings button opens the native Settings sheet', /Ads and sponsors|Playback speed/.test(shell('uiautomator dump /sdcard/ui.xml >/dev/null; cat /sdcard/ui.xml')));
   shell('input keyevent KEYCODE_BACK');
   await sleep(1200);
+
+  // --- start-up time, replay, gestures and the miniplayer ------------------------------------
+  const mode = () => yt3.evaluate('window.__bopboxGesturesInternals ? window.__bopboxGesturesInternals.mode() : "missing"');
+  const miniPlaying = '(function(){var v=document.querySelector("#movie_player video"); return !!v && !v.paused && v.currentTime > 0.2;})()';
+  const startedAt = Date.now();
+  await yt3.evaluate(`location.href='https://m.youtube.com/watch?v=${VIDEO_ID}'`);
+  const started = await waitFor(() => yt3.evaluate(miniPlaying), { label: 'video start', timeout: 30000, interval: 100 }).catch(() => false);
+  check('video starts playing after navigation', !!started, `${Date.now() - startedAt} ms from navigation to first frames`);
+  await sleep(1500);
+  check('videos replay when they end (Always repeat)', await yt3.evaluate('document.querySelector("#movie_player video").loop === true'));
+  check('gesture script is active on the watch page', (await mode()) === 'full', await mode());
+
+  // Android back on a playing video: it shrinks into the miniplayer and keeps playing.
+  shell('input keyevent KEYCODE_BACK');
+  const minimised = await waitFor(async () => (await mode()) === 'mini', { label: 'miniplayer', timeout: 8000, interval: 250 }).catch(() => false);
+  check('back minimises the video instead of leaving it', !!minimised, await mode());
+  check('video keeps playing in the miniplayer', await yt3.evaluate(miniPlaying));
+  const browse = await waitFor(
+    () => yt3.evaluate('(function(){var f=document.getElementById("bopbox-browse"); try { return !!(f && f.contentWindow.__bopbox && f.contentWindow.document.body) && f.contentWindow.location.host; } catch (e) { return false; }})()'),
+    { label: 'browse frame', timeout: 20000 },
+  ).catch(() => false);
+  check('YouTube loads behind the miniplayer', !!browse, String(browse));
+  screenshot('05-miniplayer');
+  check('still on the watch page (same player, no reload)', (await yt3.evaluate('location.href')).includes(VIDEO_ID));
+  await yt3.evaluate('window.__bopboxGesturesInternals.expand()');
+  await sleep(800);
+  check('miniplayer expands back to the full player', (await mode()) === 'full');
+
+  // A real finger: drag the player down. Coordinates come from the page, scaled to the screen.
+  const [screenW, screenH] = shell('wm size').match(/(\d+)x(\d+)/).slice(1).map(Number);
+  const geo = await yt3.evaluate(
+    '(function(){var r=document.getElementById("player-container-id").getBoundingClientRect(); return JSON.stringify({x:r.left+r.width/2,y:r.top+r.height*0.4,vw:innerWidth,vh:innerHeight});})()',
+  );
+  const { x: cx, y: cy, vw, vh } = JSON.parse(geo);
+  const scale = screenW / vw;
+  const topInset = Math.max(0, (screenH - vh * scale) / 2); // status bar above, navigation bar below
+  const px = Math.round(cx * scale);
+  const py = Math.round(topInset + cy * scale);
+  shell(`input swipe ${px} ${py} ${px} ${Math.round(screenH * 0.75)} 350`);
+  const dragged = await waitFor(async () => (await mode()) === 'mini', { label: 'drag to miniplayer', timeout: 8000, interval: 250 }).catch(() => false);
+  check('dragging the player down minimises it', !!dragged, `swipe from ${px},${py}; mode=${await mode()}`);
+  if (dragged) {
+    await yt3.evaluate('window.__bopboxGesturesInternals.expand()');
+    await sleep(800);
+  }
+  await yt3.evaluate('document.querySelector("#movie_player video").pause()');
   yt3.close();
 
   // A YouTube link shared from another app opens in Tube.
