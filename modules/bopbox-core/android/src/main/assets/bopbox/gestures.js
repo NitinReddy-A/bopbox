@@ -41,8 +41,11 @@
   }
   var cfg = B.cfg || {};
   /** Live setting; when off, drags and Android back behave as on the plain site. */
-  function miniEnabled() { return cfg.miniplayer !== false && !framesBroken; }
-  /** Set when YouTube refuses to load inside the browse frame: the miniplayer turns itself off. */
+  function miniEnabled() { return cfg.miniplayer !== false; }
+  /**
+   * Set when YouTube will not load inside the browse frame. The miniplayer then floats over the
+   * watch page itself (related videos and comments stay usable) instead of over a second page.
+   */
   var framesBroken = false;
 
   // ---------------------------------------------------------------------------------------
@@ -51,7 +54,29 @@
   function onWatch() { return location.pathname === '/watch'; }
   function onShorts() { return location.pathname.indexOf('/shorts/') === 0; }
 
-  function playerBox() { return document.getElementById('player-container-id'); }
+  /** How the player container is addressed in CSS: its id, or the mark set on a fallback element. */
+  var PLAYER = ':is(#player-container-id,[data-bopbox-player])';
+
+  /**
+   * The element that holds the watch-page player. `#player-container-id` is what the mobile
+   * site uses today; the fallbacks are the same chain Brave's Android YouTube script walks, so
+   * a renamed container does not take the gestures down with it.
+   */
+  function playerBox() {
+    var box = document.getElementById('player-container-id');
+    if (box) return box;
+    box = document.querySelector('[data-bopbox-player]');
+    if (box) return box;
+    if (!onWatch()) return null;
+    var p = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+    box = (p && p.closest('ytm-player, #player')) || (p && p.parentElement) || null;
+    if (box && box !== document.body) {
+      box.setAttribute('data-bopbox-player', '');
+      B.log('player container not found by id; using <' + box.tagName.toLowerCase() + '>');
+      return box;
+    }
+    return null;
+  }
 
   function mainVideo() {
     var p = document.getElementById('movie_player');
@@ -124,18 +149,18 @@
   // Styles
   // ---------------------------------------------------------------------------------------
   var EASE = 'cubic-bezier(.2,.9,.25,1)';
-  B.addStyle(
+  B.addStyle((
     // No grey flash on every tap: the single biggest "this is a web page" tell.
     'html{-webkit-tap-highlight-color:transparent}' +
       // Vertical drags on the watch player are ours (minimise / fullscreen), not page scroll.
-      'html.bopbox-watch.bopbox-mini-on #player-container-id{touch-action:pan-x pinch-zoom}' +
+      'html.bopbox-watch.bopbox-mini-on #player-container-id{touch-action:pan-x pinch-zoom!important}' +
       '#player-container-id,#player-container-id video,shorts-video,shorts-video video{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}' +
       'html.bopbox-dragging #player-container-id{transition:none!important;will-change:transform;transform-origin:0 0!important}' +
       'html.bopbox-settling #player-container-id{transition:transform 300ms ' + EASE + '!important;will-change:transform;transform-origin:0 0!important}' +
       'html.bopbox-dragging #player-container-id,html.bopbox-settling #player-container-id{z-index:2147483001!important}' +
       // Miniplayer: the real player, fixed and scaled; everything else of the watch page hidden.
-      'html.bopbox-mini,html.bopbox-mini body{overflow:hidden!important}' +
-      'html.bopbox-mini body *{visibility:hidden!important}' +
+      'html.bopbox-mini:not(.bopbox-mini-solo),html.bopbox-mini:not(.bopbox-mini-solo) body{overflow:hidden!important}' +
+      'html.bopbox-mini:not(.bopbox-mini-solo) body *{visibility:hidden!important}' +
       'html.bopbox-mini #player-container-id,html.bopbox-mini #player-container-id *,' +
       'html.bopbox-mini #bopbox-browse,html.bopbox-mini #bopbox-browse *,html.bopbox-mini #bopbox-mini-ui,html.bopbox-mini #bopbox-mini-ui *{visibility:visible!important}' +
       'html.bopbox-mini #player-container-id{position:fixed!important;top:0!important;left:0!important;right:auto!important;bottom:auto!important;' +
@@ -162,7 +187,8 @@
       '.bopbox-heart{position:fixed;z-index:2147483647;width:96px;height:96px;margin:-48px 0 0 -48px;pointer-events:none;' +
       'animation:bopbox-heart 800ms ' + EASE + ' forwards}' +
       '@keyframes bopbox-heart{0%{transform:scale(.2) rotate(-12deg);opacity:0}15%{transform:scale(1.15) rotate(-12deg);opacity:1}' +
-      '30%{transform:scale(.95) rotate(-12deg)}45%{transform:scale(1) rotate(-12deg);opacity:1}100%{transform:translateY(-90px) scale(1.1) rotate(-12deg);opacity:0}}',
+      '30%{transform:scale(.95) rotate(-12deg)}45%{transform:scale(1) rotate(-12deg);opacity:1}100%{transform:translateY(-90px) scale(1.1) rotate(-12deg);opacity:0}}'
+    ).split('#player-container-id').join(PLAYER),
     'bopbox-gestures',
   );
 
@@ -197,6 +223,8 @@
     if (!onWatch() && !onShorts()) lastBrowseUrl = location.href;
     // The page left the video by itself (a link, YouTube's own navigation): drop the miniplayer.
     if (mode !== 'full' && !onWatch()) resetMini();
+    // Floating over the watch page itself: picking another video there replaces this one.
+    if (mode !== 'full' && framesBroken && mini && videoId(location.href) !== mini.videoId) resetMini();
     if (mode === 'mini') syncMiniButton();
     maybePreloadFrame();
   }
@@ -245,15 +273,17 @@
     var f = frame;
     f.addEventListener('load', function () {
       // Our scripts run in every YouTube frame. If they are not there, YouTube refused to be
-      // framed (or an error page loaded): give the page back rather than show a dead frame.
+      // framed (or an error page loaded): never show a dead frame. The miniplayer carries on
+      // over the watch page instead.
       var ok = false;
       try { ok = !!f.contentWindow.__bopbox; } catch (e) {}
       if (ok || frame !== f) return;
       framesBroken = true;
-      B.log('browse frame unavailable; miniplayer disabled');
-      if (mode !== 'full') expand();
+      B.log('browse frame unavailable; miniplayer floats over the watch page');
       f.remove();
       frame = null;
+      if (mode === 'mini') rootClasses().add('bopbox-mini-solo');
+      else if (mode === 'closed') resetMini();
     });
     (document.body || document.documentElement).appendChild(frame);
     return frame;
@@ -265,7 +295,7 @@
    * starting up), so the first minimise is instant. Low-memory devices create it on demand.
    */
   function maybePreloadFrame() {
-    if (frame || !miniEnabled() || !onWatch() || B.isBackground()) return;
+    if (frame || framesBroken || !miniEnabled() || !onWatch() || B.isBackground()) return;
     if (navigator.deviceMemory && navigator.deviceMemory < 4) return;
     var c = navigator.connection;
     if (c && (c.saveData || /2g|3g/.test(c.effectiveType || ''))) return;
@@ -343,12 +373,16 @@
     if (!box || mode !== 'full' || !miniEnabled()) return false;
     var r = natural || box.getBoundingClientRect();
     var g = miniGeometry(r.height);
-    mini = { x: g.x, y: g.y, s: g.s, w: g.w, h: g.h, naturalTop: r.top, scrollY: window.scrollY, corner: { right: true, bottom: true } };
-    ensureFrame();
+    mini = {
+      x: g.x, y: g.y, s: g.s, w: g.w, h: g.h, naturalTop: r.top, scrollY: window.scrollY,
+      corner: { right: true, bottom: true }, videoId: videoId(location.href),
+    };
+    if (!framesBroken) ensureFrame();
     ensureUi();
     var commit = function () {
       rootClasses().remove('bopbox-settling', 'bopbox-dragging');
       liftAncestors(box);
+      rootClasses().toggle('bopbox-mini-solo', framesBroken);
       rootClasses().add('bopbox-mini');
       mode = 'mini';
       place(mini.x, mini.y, mini.s);
@@ -371,7 +405,7 @@
     if (mode === 'full' || !mini) return;
     var box = playerBox();
     var m = mini;
-    rootClasses().remove('bopbox-mini', 'bopbox-mini-closed');
+    rootClasses().remove('bopbox-mini', 'bopbox-mini-closed', 'bopbox-mini-solo');
     restoreAncestors();
     mode = 'full';
     window.scrollTo(0, m.scrollY || 0);
@@ -396,6 +430,11 @@
     if (mode !== 'mini') return;
     var v = mainVideo();
     if (v && !v.paused) v.pause();
+    if (framesBroken) {
+      // No other page to leave on screen: closing puts the paused video back in its place.
+      expand();
+      return;
+    }
     mode = 'closed';
     rootClasses().add('bopbox-mini-closed');
     haptic('light');
@@ -404,7 +443,7 @@
   /** Drop every miniplayer trace without animation (the page navigated, or a new video). */
   function resetMini() {
     var box = playerBox();
-    rootClasses().remove('bopbox-mini', 'bopbox-mini-closed', 'bopbox-settling', 'bopbox-dragging');
+    rootClasses().remove('bopbox-mini', 'bopbox-mini-closed', 'bopbox-mini-solo', 'bopbox-settling', 'bopbox-dragging');
     restoreAncestors();
     if (box) {
       box.style.transform = '';
@@ -538,13 +577,16 @@
   B.onBack(function () {
     if (document.fullscreenElement) return 'none';
     if (mode === 'full') {
+      // Only a video that is actually playing is worth keeping: paused, finished or still
+      // loading, back simply goes back a page as it always did.
       var box = playerBox();
-      if (miniEnabled() && onWatch() && box && box.getBoundingClientRect().height > 0 && mainVideo()) {
-        enterMini(true);
-        return 'handled';
-      }
+      var v = mainVideo();
+      var playing = !!v && !v.paused && !v.ended;
+      if (miniEnabled() && onWatch() && playing && box && box.getBoundingClientRect().height > 0 && enterMini(true)) return 'handled';
       return 'none';
     }
+    // Over the watch page itself there is nothing behind to walk back through: normal back.
+    if (framesBroken) return 'none';
     if (frameDepth > 0 && frame && frame.contentWindow) {
       frame.contentWindow.history.back();
       return 'handled';
@@ -588,7 +630,7 @@
   }
 
   window.addEventListener('contextmenu', function (e) {
-    if (hold || (e.target && e.target.closest && e.target.closest('#player-container-id, shorts-video, #player-shorts-container'))) {
+    if (hold || (e.target && e.target.closest && e.target.closest('#player-container-id, [data-bopbox-player], shorts-video, #player-shorts-container'))) {
       e.preventDefault();
     }
   }, true);
@@ -604,13 +646,42 @@
     setTimeout(function () { if (!document.fullscreenElement) requestFullscreen(); }, 220);
   }
 
+  /**
+   * Fullscreen by the most native route that works, checking after each: YouTube's own button
+   * (keeps its controls and state in step), then the player's API, then the browser's.
+   */
   function requestFullscreen() {
-    var btn = document.querySelector('#player-container-id button.fullscreen-icon, #player-container-id .ytp-fullscreen-button, #player-container-id button[aria-label*="full screen" i]');
-    if (btn) { btn.click(); return; }
-    var p = document.getElementById('movie_player');
-    if (p && typeof p.toggleFullscreen === 'function') { p.toggleFullscreen(); return; }
     var box = playerBox();
-    if (box && box.requestFullscreen) box.requestFullscreen().catch(function () {});
+    var steps = [
+      function () {
+        var btn = box && box.querySelector('button.fullscreen-icon, .ytp-fullscreen-button, button[aria-label*="full screen" i], button[aria-label*="fullscreen" i]');
+        if (!btn) return false;
+        btn.click();
+        return true;
+      },
+      function () {
+        var p = document.getElementById('movie_player');
+        if (!p || typeof p.toggleFullscreen !== 'function') return false;
+        p.toggleFullscreen();
+        return true;
+      },
+      function () {
+        var el = box || mainVideo();
+        if (!el || !el.requestFullscreen) return false;
+        var r = el.requestFullscreen();
+        if (r && r.catch) r.catch(function () {});
+        return true;
+      },
+    ];
+    var i = 0;
+    (function next() {
+      if (document.fullscreenElement) return;
+      while (i < steps.length) {
+        var tried = false;
+        try { tried = steps[i++](); } catch (e) {}
+        if (tried) { setTimeout(next, 600); return; }
+      }
+    })();
   }
 
   function watchTouchStart(e, box) {
@@ -652,7 +723,7 @@
       touch.axis = vertical && dy > 0 && touch.dragOk ? 'down' : vertical && dy < 0 && touch.swipeOk ? 'up' : 'other';
       if (touch.axis === 'down') {
         releasePlayerTouch(touch.target0, p);
-        if (!frame) ensureFrame(); // starts loading while the finger is still moving
+        if (!frame && !framesBroken) ensureFrame(); // starts loading while the finger is still moving
         var g = miniGeometry(touch.height);
         touch.target = g;
         touch.travel = Math.max(120, g.y - touch.top);
@@ -724,18 +795,34 @@
   var pendingTap = null;
   var replaying = false;
 
+  /**
+   * The like button of the Short on screen. Tried in order: YouTube's like components (the
+   * mobile site wraps the like/dislike pair in ytm-like-button-renderer), a label that says
+   * like, and finally the first toggle button, which works in any language.
+   */
+  var LIKE_SELECTORS = [
+    'like-button-view-model button',
+    'ytm-like-button-renderer button',
+    '.shorts-player-action-panel-button-view-model[data-type="like"] button',
+    'button[aria-label]',
+    'button[aria-pressed]',
+  ];
+
   function likeButton() {
-    var list = document.querySelectorAll('ytm-like-button-renderer button, like-button-view-model button, button[aria-label]');
+    var scope = document.querySelector('ytm-reel-video-renderer[is-active]') || document;
     var vh = window.innerHeight;
-    for (var i = 0; i < list.length; i++) {
-      var b = list[i];
-      var label = b.getAttribute('aria-label') || b.getAttribute('title') || '';
-      var inLikeHost = b.closest('ytm-like-button-renderer, like-button-view-model');
-      if (!inLikeHost && !/\blike\b/i.test(label)) continue;
-      if (/dislike/i.test(label) || b.closest('dislike-button-view-model, .dislike-button')) continue;
-      var r = b.getBoundingClientRect();
-      if (!r.width || r.top < 0 || r.bottom > vh) continue;
-      return b;
+    for (var s = 0; s < LIKE_SELECTORS.length; s++) {
+      var list = scope.querySelectorAll(LIKE_SELECTORS[s]);
+      for (var i = 0; i < list.length; i++) {
+        var b = list[i];
+        var label = b.getAttribute('aria-label') || b.getAttribute('title') || '';
+        if (/dislike/i.test(label) || b.closest('dislike-button-view-model, .dislike-button, #dislike-button')) continue;
+        if (LIKE_SELECTORS[s] === 'button[aria-label]' && !/\blikes?\b/i.test(label)) continue;
+        var r = b.getBoundingClientRect();
+        var mid = r.top + r.height / 2;
+        if (!r.width || mid < 0 || mid > vh) continue;
+        return b;
+      }
     }
     return null;
   }
@@ -754,6 +841,7 @@
     heart(x, y);
     haptic('confirm');
     var b = likeButton();
+    if (!b) B.log('double tap: no like button found on this Short');
     if (b && b.getAttribute('aria-pressed') !== 'true') b.click();
   }
 
