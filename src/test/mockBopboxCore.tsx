@@ -36,7 +36,8 @@ export const DEFAULT_SETTINGS: Settings = {
   hideShorts: false,
   hideCards: true,
   swipeControls: true,
-  alwaysRepeat: false,
+  alwaysRepeat: true,
+  miniplayer: true,
 };
 
 export const DEFAULT_STATS: AdblockStats = {
@@ -132,6 +133,7 @@ function createMockBrowser(): MockBrowser {
   const command = <Args extends unknown[] = []>() => jest.fn((..._args: Args) => Promise.resolve());
   return {
     goBack: command(),
+    back: command(),
     goForward: command(),
     reload: command(),
     goHome: command(),

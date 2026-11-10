@@ -6,8 +6,12 @@ import android.content.Intent
 import android.content.MutableContextWrapper
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.Message
 import android.util.Log
+import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
 import android.view.View
 import android.webkit.ConsoleMessage
@@ -141,6 +145,14 @@ class BopboxWebView(
   private fun configureSettings(settings: Settings) {
     val mode = settings.modeFor(app.id)
     appliedMode = mode
+    // Keep the renderer at foreground priority even while the view is off screen: background
+    // playback must not be throttled or be first in line when Android reclaims memory.
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) setRendererPriorityPolicy(RENDERER_PRIORITY_IMPORTANT, false)
+    // Navigation is confined to YouTube and Google sign-in (see NavigationPolicy), so the Safe
+    // Browsing lookup that otherwise gates every navigation and subresource buys nothing here.
+    if (WebViewFeature.isFeatureSupported(WebViewFeature.SAFE_BROWSING_ENABLE)) {
+      WebSettingsCompat.setSafeBrowsingEnabled(this.settings, false)
+    }
     this.settings.apply {
       javaScriptEnabled = true
       domStorageEnabled = true
@@ -216,6 +228,7 @@ class BopboxWebView(
         is BridgeMessage.Blocked -> AdBlocker.recordBlocked(msg.count)
         is BridgeMessage.Log -> if (BuildConfig.DEBUG) Log.d(TAG, "[${app.id}] ${msg.text}")
         BridgeMessage.OpenSettings -> WebViewPool.emitUi(WebViewPool.UI_OPEN_SETTINGS)
+        is BridgeMessage.Haptic -> haptic(msg.kind)
         null -> Unit
       }
     }
@@ -224,6 +237,35 @@ class BopboxWebView(
   /** Send a media command to the page. Safe to call from the main thread only. */
   fun command(cmd: MediaCommand, arg: Double? = null) {
     evaluateJavascript(PageScripts.command(cmd.js, arg), null)
+  }
+
+  private fun haptic(kind: String) {
+    val effect = when {
+      kind == "confirm" && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> HapticFeedbackConstants.CONFIRM
+      kind == "confirm" -> HapticFeedbackConstants.VIRTUAL_KEY
+      else -> HapticFeedbackConstants.CONTEXT_CLICK
+    }
+    performHapticFeedback(effect)
+  }
+
+  /**
+   * Ask the page what Android back should do (see [PageScripts.BACK_QUERY]). [onAnswer] always
+   * runs once, on the main thread; a page that does not answer in time counts as "none".
+   */
+  fun askBack(onAnswer: (String) -> Unit) {
+    var answered = false
+    val finish = { answer: String ->
+      if (!answered) {
+        answered = true
+        onAnswer(answer)
+      }
+    }
+    val timeout = Runnable { finish("none") }
+    backHandler.postDelayed(timeout, BACK_TIMEOUT_MS)
+    evaluateJavascript(PageScripts.BACK_QUERY) { raw ->
+      backHandler.removeCallbacks(timeout)
+      finish(PageScripts.backAnswer(raw))
+    }
   }
 
   /** Tell the page whether it is off screen (see the background guard in bridge.js). */
@@ -364,5 +406,7 @@ class BopboxWebView(
 
   companion object {
     private const val TAG = "BopboxWebView"
+    private const val BACK_TIMEOUT_MS = 350L
+    private val backHandler = Handler(Looper.getMainLooper())
   }
 }

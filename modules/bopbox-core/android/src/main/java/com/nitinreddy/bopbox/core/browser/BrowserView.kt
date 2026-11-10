@@ -73,6 +73,26 @@ class BrowserView(context: Context, appContext: AppContext) : ExpoView(context, 
   // --- Commands from JS -----------------------------------------------------------------
 
   fun goBack() = webView?.takeIf { it.canGoBack() }?.goBack()
+
+  /**
+   * Android back. The page gets the first say (a playing video minimises instead of closing);
+   * otherwise walk back through history, and at the start of it leave to the background so
+   * playback continues. The app never finishes itself.
+   */
+  fun back() {
+    val wv = webView
+    if (wv == null) {
+      activity?.moveTaskToBack(true)
+      return
+    }
+    wv.askBack { answer ->
+      when {
+        answer == "handled" -> Unit
+        answer == "none" && wv.canGoBack() -> wv.goBack()
+        else -> activity?.moveTaskToBack(true)
+      }
+    }
+  }
   fun goForward() = webView?.takeIf { it.canGoForward() }?.goForward()
   fun reload() = webView?.reload()
   fun goHome() = webView?.goHome()

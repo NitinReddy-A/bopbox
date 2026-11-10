@@ -39,7 +39,7 @@ describe('Shell', () => {
     await waitFor(() => expect(browsers.refs.youtube?.loadUrl).toHaveBeenLastCalledWith('https://youtu.be/warm'));
   });
 
-  it('routes the back button: settings, fullscreen, page history, then background', async () => {
+  it('routes the back button: settings, fullscreen, then the YouTube view', async () => {
     const back = captureBackHandler();
     await renderShell();
 
@@ -53,13 +53,15 @@ describe('Shell', () => {
     expect(browsers.refs.youtube?.exitFullscreen).toHaveBeenCalled();
     await act(async () => browsers.props.youtube?.onFullscreenChange?.({ nativeEvent: { fullscreen: false } }));
 
+    // The view decides natively (minimise, page back or background), with or without history.
     await fireNav({ canGoBack: true });
     await act(async () => back.pressBack());
-    expect(browsers.refs.youtube?.goBack).toHaveBeenCalledTimes(1);
+    expect(browsers.refs.youtube?.back).toHaveBeenCalledTimes(1);
 
     await fireNav({ canGoBack: false });
     await act(async () => back.pressBack());
-    expect(BopboxCore.moveToBackground).toHaveBeenCalledTimes(1);
+    expect(browsers.refs.youtube?.back).toHaveBeenCalledTimes(2);
+    expect(BopboxCore.moveToBackground).not.toHaveBeenCalled();
   });
 
   it('shows a retry screen when YouTube fails to load', async () => {

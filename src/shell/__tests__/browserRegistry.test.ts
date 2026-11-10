@@ -4,6 +4,7 @@ import { BrowserRegistry } from '../browserRegistry';
 
 const fakeBrowser = (): BrowserViewRef => ({
   goBack: jest.fn(() => Promise.resolve()),
+  back: jest.fn(() => Promise.resolve()),
   goForward: jest.fn(() => Promise.resolve()),
   reload: jest.fn(() => Promise.resolve()),
   goHome: jest.fn(() => Promise.resolve()),

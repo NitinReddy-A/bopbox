@@ -95,6 +95,8 @@ class BridgeAndScriptsTest {
     // The scriptlet runner sits between the bridge and the site script that builds on it.
     assertTrue(script.indexOf("/*bridge.js*/") < script.indexOf("/*scriptlets.js*/"))
     assertTrue(script.indexOf("/*scriptlets.js*/") < script.indexOf("/*youtube.js*/"))
+    // Gestures build on both the bridge and the YouTube script.
+    assertTrue(script.indexOf("/*youtube.js*/") < script.indexOf("/*gestures.js*/"))
   }
 
   @Test fun `cosmetic rules are dropped when adblock is off`() {
@@ -115,6 +117,10 @@ class BridgeAndScriptsTest {
       Settings().patched(mapOf("defaultSpeed" to "1.75", "defaultQuality" to "720", "hideShorts" to true, "alwaysRepeat" to true)),
       emptyMap(),
     )
+    assertTrue(cfg.getBoolean("miniplayer"))
+    val off = PageScripts.config(AppCatalog.YOUTUBE, Settings().patched(mapOf("miniplayer" to false, "alwaysRepeat" to false)), emptyMap())
+    assertFalse(off.getBoolean("miniplayer"))
+    assertFalse(off.getBoolean("alwaysRepeat"))
     assertEquals(1.75, cfg.getDouble("defaultSpeed"), 0.0)
     assertEquals("720", cfg.getString("defaultQuality"))
     assertTrue(cfg.getBoolean("hideShorts"))
@@ -133,6 +139,23 @@ class BridgeAndScriptsTest {
 
   @Test fun `the settings button message is understood`() {
     assertEquals(BridgeMessage.OpenSettings, BridgeProtocol.parse("youtube", """{"t":"openSettings"}""", 0))
+  }
+
+  @Test fun `gesture haptics are understood and limited to known kinds`() {
+    assertEquals(BridgeMessage.Haptic("confirm"), BridgeProtocol.parse("youtube", """{"t":"haptic","k":"confirm"}""", 0))
+    assertEquals(BridgeMessage.Haptic("light"), BridgeProtocol.parse("youtube", """{"t":"haptic","k":"light"}""", 0))
+    assertEquals(BridgeMessage.Haptic("light"), BridgeProtocol.parse("youtube", """{"t":"haptic","k":"<anything>"}""", 0))
+  }
+
+  @Test fun `the page's answer to back is read from the evaluateJavascript result`() {
+    assertEquals("handled", PageScripts.backAnswer("\"handled\""))
+    assertEquals("background", PageScripts.backAnswer("\"background\""))
+    assertEquals("none", PageScripts.backAnswer("\"none\""))
+    // No bridge on the page, an error page, or no answer at all: fall back to normal back.
+    assertEquals("none", PageScripts.backAnswer("null"))
+    assertEquals("none", PageScripts.backAnswer(null))
+    assertEquals("none", PageScripts.backAnswer("\"anything else\""))
+    assertTrue(PageScripts.BACK_QUERY.contains("window.__bopbox.back()"))
   }
 
   @Test fun `commands are json encoded`() {

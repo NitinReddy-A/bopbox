@@ -19,7 +19,8 @@ class SettingsTest {
     assertTrue(s.returnDislike)
     assertTrue(s.swipeControls)
     assertFalse(s.hideShorts)
-    assertFalse(s.alwaysRepeat)
+    assertTrue(s.alwaysRepeat)
+    assertTrue(s.miniplayer)
   }
 
   @Test fun `round trips through flat map`() {
@@ -31,7 +32,8 @@ class SettingsTest {
         "defaultQuality" to "1080",
         "defaultSpeed" to "1.5",
         "hideShorts" to true,
-        "alwaysRepeat" to true,
+        "alwaysRepeat" to false,
+        "miniplayer" to false,
         "returnDislike" to false,
       ),
     )
@@ -85,6 +87,20 @@ class SettingsTest {
     assertEquals("auto", Settings.fromMap(v2).defaultQuality)
     // Other v1 choices are untouched.
     assertEquals("720", Settings.fromMap(Settings.migrate(mapOf("defaultQuality" to "720"))).defaultQuality)
+  }
+
+  @Test fun `older settings pick up always repeat once, later choices are kept`() {
+    // Versions 1 and 2 stored the old default (off) on any change.
+    val v2 = mapOf<String, Any?>("alwaysRepeat" to false, "defaultQuality" to "auto", Settings.VERSION_KEY to 2)
+    val migrated = Settings.migrate(v2)
+    assertTrue(Settings.fromMap(migrated).alwaysRepeat)
+    assertEquals("auto", Settings.fromMap(migrated).defaultQuality) // a v2 choice of auto was deliberate
+    assertEquals(Settings.VERSION, migrated[Settings.VERSION_KEY])
+    assertTrue(Settings.fromMap(Settings.migrate(mapOf("alwaysRepeat" to false))).alwaysRepeat)
+    // Turned off after the upgrade: stays off.
+    val v3 = mapOf<String, Any?>("alwaysRepeat" to false, Settings.VERSION_KEY to Settings.VERSION)
+    assertEquals(v3, Settings.migrate(v3))
+    assertFalse(Settings.fromMap(v3).alwaysRepeat)
   }
 
   @Test fun `catalog is youtube only and resolves its urls`() {

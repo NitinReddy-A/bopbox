@@ -193,13 +193,51 @@
     var prunePaths = rawPrune ? rawPrune.split(/ +/) : [];
     var needlePaths = prunePaths.length && rawNeedles ? rawNeedles.split(/ +/) : [];
     if (!prunePaths.length) return null;
-    return function (obj) {
+    var prune = function (obj) {
       if (!isObj(obj)) return false;
       for (var i = 0; i < needlePaths.length; i++) if (!findOwner(obj, needlePaths[i], false)) return false;
       var changed = false;
       for (var j = 0; j < prunePaths.length; j++) if (findOwner(obj, prunePaths[j], true)) changed = true;
       return changed;
     };
+    // Every needle must be there, and at least one prune path.
+    prune.mayApply = textHint(needlePaths.map(pathKeys), prunePaths.map(pathKeys));
+    return prune;
+  }
+
+  // ---------------------------------------------------------------------------------------
+  // Text hints: a JSON body can only match a rule if the rule's property names appear in it
+  // as quoted keys. Checking that with indexOf skips parsing, editing and re-serialising the
+  // large watch/browse responses that carry no ads, which is most of them. (Without this every
+  // video start paid for a full parse + tree walk + stringify of the watch response.)
+  // ---------------------------------------------------------------------------------------
+
+  var PATH_WILDCARDS = { '': 1, '*': 1, '[]': 1, '[-]': 1, '{}': 1, '{-}': 1 };
+
+  /** Literal property names in a dotted json-prune path. */
+  function pathKeys(path) {
+    return path.split('.').filter(function (k) { return !PATH_WILDCARDS[k] && !/^\d+$/.test(k); });
+  }
+
+  function hasKeys(text, keys) {
+    for (var i = 0; i < keys.length; i++) if (text.indexOf('"' + keys[i] + '"') === -1) return false;
+    return true;
+  }
+
+  /** [all]: key lists that must all be present; [any]: at least one list must be fully present. */
+  function textHint(all, any) {
+    return function (text) {
+      if (typeof text !== 'string') return true;
+      for (var i = 0; i < all.length; i++) if (!hasKeys(text, all[i])) return false;
+      if (!any || !any.length) return true;
+      for (var j = 0; j < any.length; j++) if (hasKeys(text, any[j])) return true;
+      return false;
+    };
+  }
+
+  function mayApply(hook, text) {
+    var f = hook.object && hook.object.mayApply;
+    return !f || f(text);
   }
 
   // ---------------------------------------------------------------------------------------
@@ -334,14 +372,26 @@
     return Array.isArray(value) ? value.map(function (_, i) { return i; }) : Object.keys(value);
   }
 
-  /** Every node under [node] (not [node] itself), depth first. */
-  function descendants(node, out) {
-    childKeys(node.value).forEach(function (k) {
-      var child = { parent: node.value, key: k, value: node.value[k] };
-      out.push(child);
-      descendants(child, out);
-    });
-    return out;
+  /**
+   * Calls visit(parent, key, child) for every node under [value], without building a node list
+   * first: watch responses have tens of thousands of nodes and `..key` used to allocate one
+   * wrapper object per node on every request.
+   */
+  function walk(value, visit) {
+    var stack = [value];
+    while (stack.length) {
+      var v = stack.pop();
+      if (!isObj(v)) continue;
+      var arr = Array.isArray(v);
+      var keys = arr ? null : Object.keys(v);
+      var n = arr ? v.length : keys.length;
+      for (var i = 0; i < n; i++) {
+        var k = arr ? i : keys[i];
+        var c = v[k];
+        visit(v, k, c);
+        if (isObj(c)) stack.push(c);
+      }
+    }
   }
 
   function stepMatches(step, parentValue, key) {
@@ -360,37 +410,67 @@
       var out = [];
       nodes.forEach(function (node) {
         if (step.filter) {
-          var pool = step.desc || Array.isArray(node.value)
-            ? (step.desc ? descendants(node, []) : childKeys(node.value).map(function (k) { return { parent: node.value, key: k, value: node.value[k] }; }))
-            : [node];
-          pool.forEach(function (cand) { if (passes(step.filter, cand.value)) out.push(cand); });
+          if (step.desc) {
+            walk(node.value, function (p, k, c) { if (passes(step.filter, c)) out.push({ parent: p, key: k, value: c }); });
+          } else if (Array.isArray(node.value)) {
+            childKeys(node.value).forEach(function (k) {
+              if (passes(step.filter, node.value[k])) out.push({ parent: node.value, key: k, value: node.value[k] });
+            });
+          } else if (passes(step.filter, node.value)) {
+            out.push(node);
+          }
           return;
         }
-        var pool2 = step.desc ? [node].concat(descendants(node, [])) : [node];
-        pool2.forEach(function (owner) {
-          childKeys(owner.value).forEach(function (k) {
-            if (stepMatches(step, owner.value, k)) out.push({ parent: owner.value, key: k, value: owner.value[k] });
-          });
+        var own = node.value;
+        childKeys(own).forEach(function (k) {
+          if (stepMatches(step, own, k)) out.push({ parent: own, key: k, value: own[k] });
         });
+        if (step.desc) {
+          walk(own, function (p, k, c) {
+            if (!isObj(c)) return;
+            childKeys(c).forEach(function (ck) {
+              if (stepMatches(step, c, ck)) out.push({ parent: c, key: ck, value: c[ck] });
+            });
+          });
+        }
       });
       nodes = out;
     });
     return nodes;
   }
 
+  /** Property names a document must contain for [compiled] to match anything. */
+  function jsonPathKeys(compiled) {
+    var keys = [];
+    compiled.steps.forEach(function (step) {
+      if (step.key !== undefined && (step.literal || step.key !== '*')) keys.push(step.key);
+      if (step.filter && !step.filter.not) keys.push.apply(keys, step.filter.path.filter(function (k) { return k !== '*'; }));
+    });
+    return keys;
+  }
+
   /** Apply a compiled path to [root] in place; returns the number of edited nodes. */
   function applyJsonPath(compiled, root) {
     var hits = evaluatePath(compiled, root).filter(function (h) { return h.parent !== null; });
-    for (var i = hits.length - 1; i >= 0; i--) {
+    var REMOVED = {};
+    var arrays = [];
+    for (var i = 0; i < hits.length; i++) {
       var h = hits[i];
       if (compiled.assign) {
         h.parent[h.key] = isObj(compiled.assign.v) ? nativeParse(nativeStringify(compiled.assign.v)) : compiled.assign.v;
       } else if (Array.isArray(h.parent) && typeof h.key === 'number') {
-        h.parent.splice(h.key, 1);
+        // Mark first and compact after, so indices stay valid whatever order hits came in.
+        if (arrays.indexOf(h.parent) === -1) arrays.push(h.parent);
+        h.parent[h.key] = REMOVED;
       } else {
         delete h.parent[h.key];
       }
     }
+    arrays.forEach(function (a) {
+      var w = 0;
+      for (var r = 0; r < a.length; r++) if (a[r] !== REMOVED) a[w++] = a[r];
+      a.length = w;
+    });
     return hits.length;
   }
 
@@ -421,7 +501,7 @@
         if (t !== out) { out = t; changed++; }
       } catch (e) {}
     });
-    var objectHooks = hooks.filter(function (h) { return h.object; });
+    var objectHooks = hooks.filter(function (h) { return h.object && mayApply(h, out); });
     if (objectHooks.length) {
       var obj;
       try { obj = nativeParse(out); } catch (e) { obj = undefined; }
@@ -440,10 +520,11 @@
     if (parseInstalled) return;
     parseInstalled = true;
     var prev = JSON.parse;
-    JSON.parse = function parse() {
+    JSON.parse = function parse(text) {
       var obj = prev.apply(this, arguments);
       if (isObj(obj) && parseHooks.length) {
-        var n = runObjectHooks(parseHooks, obj);
+        var hooks = typeof text === 'string' ? parseHooks.filter(function (h) { return mayApply(h, text); }) : parseHooks;
+        var n = hooks.length ? runObjectHooks(hooks, obj) : 0;
         if (n) post(n);
       }
       return obj;
@@ -654,7 +735,9 @@
   function editor(jsonq, trusted) {
     var compiled = compileJsonPath(jsonq || '');
     if (!compiled || (compiled.assign && !trusted)) return null;
-    return function (obj) { return applyJsonPath(compiled, obj) > 0; };
+    var edit = function (obj) { return applyJsonPath(compiled, obj) > 0; };
+    edit.mayApply = textHint([jsonPathKeys(compiled)]);
+    return edit;
   }
 
   function addResponseHook(list, install, needlesRaw, hook) {
@@ -748,6 +831,7 @@
     makePruner: makePruner,
     compileJsonPath: compileJsonPath,
     applyJsonPath: applyJsonPath,
+    textHint: textHint,
   };
 
   sync();

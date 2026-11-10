@@ -12,8 +12,19 @@
 
   var cfg = window.__bopboxConfig || {};
   var site = {};
+  /** Inside Tube's browse frame (the page behind the miniplayer), not the main page. */
+  var inFrame = false;
+  try { inFrame = window.top !== window; } catch (e) { inFrame = true; }
+
+  /** Messages a frame may pass up to native through the main page. */
+  var RELAYED = { openSettings: 1, haptic: 1, blocked: 1 };
 
   function post(msg) {
+    if (inFrame) {
+      // Native only listens to the main frame; hand frame messages to the page that hosts it.
+      try { if (msg && RELAYED[msg.t]) window.top.postMessage({ __bopboxRelay: msg }, location.origin); } catch (e) {}
+      return;
+    }
     try {
       var b = window.BopboxBridge;
       if (b && b.postMessage) b.postMessage(JSON.stringify(msg));
@@ -237,6 +248,7 @@
   }
 
   var lastKey = '';
+  var backHandler = null;
   var pending = null;
 
   function report(force) {
@@ -250,14 +262,22 @@
   }
 
   function schedule() {
-    if (pending) return;
+    if (pending || inFrame) return;
     pending = setTimeout(function () {
       pending = null;
       report(false);
     }, 150);
   }
 
-  setInterval(function () { report(false); }, 1000);
+  if (!inFrame) setInterval(function () { report(false); }, 1000);
+
+  if (!inFrame) {
+    window.addEventListener('message', function (e) {
+      var m = e.data && e.data.__bopboxRelay;
+      if (e.origin !== location.origin || !m || typeof m !== 'object' || !RELAYED[m.t]) return;
+      post(m);
+    });
+  }
 
   // ---------------------------------------------------------------------------------------
   // 5. Commands from native.
@@ -333,6 +353,14 @@
     report: function () { report(true); },
     activeMedia: activeMedia,
     registerSite: function (hooks) { site = hooks || {}; },
+    inFrame: inFrame,
+    /** True while Tube is in the background or this page is off screen. */
+    isBackground: function () { return inBackground; },
+    /** Android back: 'handled', 'background' (leave the app, keep playing) or 'none'. */
+    back: function () {
+      try { return (backHandler && backHandler()) || 'none'; } catch (e) { return 'none'; }
+    },
+    onBack: function (fn) { backHandler = fn; },
     _snapshot: snapshot,
   };
 })();
