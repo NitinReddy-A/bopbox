@@ -88,10 +88,11 @@ npx eas-cli build -p android --profile e2e         # same, with WebView debuggin
 node scripts/e2e/run-e2e.mjs path/to/tube-e2e.apk  # needs a running emulator or device
 ```
 
-Releases build themselves: when a push to `tube` changes the version in `app.json`, the
-`Release` workflow runs the tests, builds the signed APK on EAS and publishes it as a GitHub
-pre-release with the notes from `release-notes/<version>.md`. It needs one repository secret,
-`EXPO_TOKEN` (expo.dev → Account settings → Access tokens).
+Every push to `tube` runs the tests, typecheck and lint in the `Release` workflow. When the
+version in `app.json` has no release yet, the same run builds the signed APK on EAS and publishes
+it as a GitHub pre-release with the notes from `release-notes/<version>.md`. Releasing needs one
+repository secret, `EXPO_TOKEN` (expo.dev → Account settings → Access tokens); without it the
+tests still run and the release is skipped with a notice.
 
 Kotlin unit tests: `cd android && ./gradlew :bopbox-core:testDebugUnitTest` after `npx expo prebuild -p android`.
 
