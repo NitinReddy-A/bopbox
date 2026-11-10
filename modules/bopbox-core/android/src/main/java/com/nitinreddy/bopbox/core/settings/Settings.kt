@@ -26,7 +26,10 @@ data class Settings(
   val hideShorts: Boolean = false,
   val hideCards: Boolean = true,
   val swipeControls: Boolean = true,
-  val alwaysRepeat: Boolean = false,
+  /** Replay a video when it ends. Shorts always loop, as in the YouTube app. */
+  val alwaysRepeat: Boolean = true,
+  /** Drag the player down (or press back) to keep watching in a floating miniplayer. */
+  val miniplayer: Boolean = true,
 ) {
   @Suppress("UNUSED_PARAMETER")
   fun adblockFor(appId: String): Boolean = adblockEnabled
@@ -50,6 +53,7 @@ data class Settings(
     "hideCards" to hideCards,
     "swipeControls" to swipeControls,
     "alwaysRepeat" to alwaysRepeat,
+    "miniplayer" to miniplayer,
   )
 
   /** Apply a partial update coming from JS. Unknown keys and bad values are rejected loudly. */
@@ -71,6 +75,7 @@ data class Settings(
         "hideCards" -> next.copy(hideCards = bool(key, value))
         "swipeControls" -> next.copy(swipeControls = bool(key, value))
         "alwaysRepeat" -> next.copy(alwaysRepeat = bool(key, value))
+        "miniplayer" -> next.copy(miniplayer = bool(key, value))
         else -> throw IllegalArgumentException("Unknown setting '$key'")
       }
     }
@@ -83,18 +88,21 @@ data class Settings(
     val SPEEDS = setOf("0.5", "0.75", "1", "1.25", "1.5", "1.75", "2", "2.5", "3")
 
     /** Layout version of persisted settings; bump it together with a step in [migrate]. */
-    const val VERSION = 2
+    const val VERSION = 3
     const val VERSION_KEY = "settingsVersion"
 
     /**
-     * Upgrade values saved by an older version. Version 1 defaulted quality to "auto" (YouTube's
-     * slow 240p start), and saved every field on any change, so "auto" there was not a choice.
+     * Upgrade values saved by an older version. Every field is saved on any change, so an old
+     * default found in storage was not a choice and moves to the new default:
+     *  - version 1 defaulted quality to "auto" (YouTube's slow 240p start);
+     *  - versions 1 and 2 defaulted "always repeat" to off.
      */
     fun migrate(stored: Map<String, Any?>): Map<String, Any?> {
       val version = stored[VERSION_KEY] as? Int ?: 1
       if (version >= VERSION) return stored
       val out = stored.toMutableMap()
-      if (out["defaultQuality"] == "auto") out["defaultQuality"] = Settings().defaultQuality
+      if (version < 2 && out["defaultQuality"] == "auto") out["defaultQuality"] = Settings().defaultQuality
+      if (version < 3 && out["alwaysRepeat"] == false) out["alwaysRepeat"] = Settings().alwaysRepeat
       out[VERSION_KEY] = VERSION
       return out
     }

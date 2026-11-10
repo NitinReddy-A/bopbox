@@ -1,4 +1,3 @@
-import { BopboxCore } from '@bopbox/core';
 import { useEffect, useRef } from 'react';
 import { BackHandler } from 'react-native';
 
@@ -12,10 +11,8 @@ function perform(decision: BackDecision, shell: ShellApi): void {
       return shell.closeSettings();
     case 'exitFullscreen':
       return shell.run((b) => b.exitFullscreen());
-    case 'goBack':
-      return shell.run((b) => b.goBack());
-    case 'moveToBackground':
-      return BopboxCore.moveToBackground();
+    case 'pageBack':
+      return shell.run((b) => b.back());
   }
 }
 

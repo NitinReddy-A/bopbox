@@ -186,12 +186,24 @@ export function SettingsScreen({ grabRegion }: Props) {
             icon="repeat"
             iconColor={tint.teal}
             title="Always repeat"
+            subtitle="Replays a video when it ends. Shorts always loop"
             value={settings.alwaysRepeat}
             onChange={(v) => update({ alwaysRepeat: v })}
           />
         </Group>
 
-        <Group title="Player" footer="Swipe up or down on the left of a fullscreen video for brightness, on the right for volume.">
+        <Group
+          title="Player"
+          footer="Drag a video down to keep watching while you browse, swipe it up for fullscreen, hold for 2× speed, and double tap a Short to like it. In fullscreen, swipe the left side for brightness and the right side for volume."
+        >
+          <ToggleRow
+            icon="pip"
+            iconColor={tint.indigo}
+            title="Miniplayer"
+            subtitle="Drag down or press back to shrink the video"
+            value={settings.miniplayer}
+            onChange={(v) => update({ miniplayer: v })}
+          />
           <ToggleRow
             icon="sun"
             iconColor={tint.orange}

@@ -55,6 +55,9 @@ sealed interface BridgeMessage {
 
   /** The page's own Settings button (injected into YouTube's top bar) was tapped. */
   data object OpenSettings : BridgeMessage
+
+  /** A gesture landed (miniplayer snapped, Short liked): [kind] is "light" or "confirm". */
+  data class Haptic(val kind: String) : BridgeMessage
 }
 
 object BridgeProtocol {
@@ -93,6 +96,7 @@ object BridgeProtocol {
       "blocked" -> BridgeMessage.Blocked(o.optInt("n", 0).coerceIn(0, 1000))
       "log" -> BridgeMessage.Log(o.optString("m").take(500))
       "openSettings" -> BridgeMessage.OpenSettings
+      "haptic" -> BridgeMessage.Haptic(if (o.optString("k") == "confirm") "confirm" else "light")
       else -> null
     }
   }

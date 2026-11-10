@@ -30,6 +30,9 @@ function resetWindow() {
   delete window.__bopbox;
   delete window.__bopboxYouTube;
   delete window.__bopboxScriptlets;
+  delete window.__bopboxGestures;
+  delete window.__bopboxGesturesInternals;
+  delete navigator.connection;
   delete window.__bopboxConfig;
   delete window.ytInitialPlayerResponse;
   delete window.fetch;
@@ -267,6 +270,78 @@ describe('youtube.js player features', () => {
     expect(v.playbackRate).toBe(1);
   });
 
+  it('always loops Shorts, and replays when a player ends the stream itself', () => {
+    window.history.pushState({}, '', '/shorts/dQw4w9WgXcQ');
+    boot({ app: 'youtube', adblock: true, alwaysRepeat: false, cosmetic: {} }, ['bridge.js', 'youtube.js']);
+    const { v } = mountPlayer();
+    jest.advanceTimersByTime(600);
+    expect(v.loop).toBe(true);
+    v.currentTime = 30;
+    v.pause();
+    v.dispatchEvent(new Event('ended'));
+    expect(v.currentTime).toBe(0);
+    expect(v.paused).toBe(false);
+  });
+
+  it('replays a regular video through the player when Always repeat is on, not when it is off', () => {
+    const cfg = { app: 'youtube', adblock: true, alwaysRepeat: true, cosmetic: {} };
+    boot(cfg, ['bridge.js', 'youtube.js']);
+    const seekTo = jest.fn();
+    const { v } = mountPlayer({ seekTo });
+    jest.advanceTimersByTime(600);
+    expect(v.loop).toBe(true);
+    v.dispatchEvent(new Event('ended'));
+    expect(seekTo).toHaveBeenCalledWith(0, true);
+    expect(v.paused).toBe(false);
+
+    cfg.alwaysRepeat = false; // toggled live from Settings
+    jest.advanceTimersByTime(600);
+    expect(v.loop).toBe(false);
+    v.pause();
+    v.dispatchEvent(new Event('ended'));
+    expect(seekTo).toHaveBeenCalledTimes(1);
+    expect(v.paused).toBe(true);
+  });
+
+  it('starts lower on slow or metered connections so the first frame is not held up', () => {
+    const cfg = { app: 'youtube', defaultQuality: '1080', cosmetic: {} };
+    const net = { effectiveType: '4g', downlink: 10, saveData: false };
+    Object.defineProperty(navigator, 'connection', { configurable: true, value: net });
+    boot(cfg, ['bridge.js', 'youtube.js']);
+    const { startQuality } = window.__bopboxYouTubeInternals;
+    expect(startQuality()).toBe('1080');
+    net.downlink = 3.5;
+    expect(startQuality()).toBe('720');
+    net.effectiveType = '3g';
+    expect(startQuality()).toBe('480');
+    net.effectiveType = '2g';
+    expect(startQuality()).toBe('360');
+    Object.assign(net, { effectiveType: '4g', downlink: 10, saveData: true });
+    expect(startQuality()).toBe('360');
+    net.saveData = false;
+    cfg.defaultQuality = '480'; // never raises a lower preference
+    net.downlink = 3;
+    expect(startQuality()).toBe('480');
+    cfg.defaultQuality = 'auto';
+    expect(startQuality()).toBe('auto');
+  });
+
+  it('stops page upkeep while in the background, but keeps skipping ads and sponsors', () => {
+    boot({ app: 'youtube', adblock: true, cosmetic: {} }, ['bridge.js', 'youtube.js']);
+    const { v, p } = mountPlayer();
+    document.body.insertAdjacentHTML('beforeend', '<ytm-mobile-topbar-renderer><header></header></ytm-mobile-topbar-renderer>');
+    window.__bopbox.command('background', 1);
+    jest.advanceTimersByTime(3000);
+    expect(document.getElementById('bopbox-settings')).toBeNull();
+    p.classList.add('ad-showing');
+    jest.advanceTimersByTime(300);
+    expect(v.muted).toBe(true);
+    p.classList.remove('ad-showing');
+    window.__bopbox.command('background', 0);
+    jest.advanceTimersByTime(1100);
+    expect(document.getElementById('bopbox-settings')).not.toBeNull();
+  });
+
   it('starts every video at the preferred quality via YouTube’s own sticky setting', () => {
     boot({ app: 'youtube', adblock: true, defaultQuality: '1080', cosmetic: {} }, ['bridge.js', 'youtube.js']);
     const sticky = JSON.parse(window.localStorage.getItem('yt-player-quality'));
@@ -494,6 +569,45 @@ describe('scriptlets.js (uBO ##+js rules)', () => {
     expect(run('trusted-json-edit, .a=1')).toBe(true);
   });
 
+  it('removes several ad slots from the same list, wherever they sit', async () => {
+    const slot = { adSlotRenderer: {} };
+    serve({
+      '/get_watch': { x: { itemSectionRenderer: { contents: [slot, { v: 1 }, slot, slot, { v: 2 }, slot] } } },
+    });
+    withRules(['json-edit-fetch-response, ..itemSectionRenderer.contents.*[?.adSlotRenderer], propsToMatch, /get_watch']);
+    const data = await (await window.fetch('https://m.youtube.com/youtubei/v1/get_watch')).json();
+    expect(data.x.itemSectionRenderer.contents).toEqual([{ v: 1 }, { v: 2 }]);
+  });
+
+  it('hands back the original response, unparsed, when a body cannot contain what a rule removes', async () => {
+    serve({ '/get_watch': { x: { itemSectionRenderer: { contents: [{ videoRenderer: 1 }] } } } });
+    withRules([
+      'json-edit-fetch-response, ..itemSectionRenderer.contents.*[?.adSlotRenderer], propsToMatch, /get_watch',
+      'json-prune-fetch-response, playerResponse.adPlacements playerResponse.adSlots, , propsToMatch, /get_watch',
+    ]);
+    const parse = jest.spyOn(JSON, 'parse');
+    const res = await window.fetch('https://m.youtube.com/youtubei/v1/get_watch');
+    // No ad keys in the text: no parse, no re-serialised copy, the page gets YouTube's own response.
+    expect(parse).not.toHaveBeenCalled();
+    parse.mockRestore();
+    expect(res.constructor.name).toBe('FakeResponse');
+    expect((await res.json()).x.itemSectionRenderer.contents).toEqual([{ videoRenderer: 1 }]);
+    expect(window.__bopboxScriptlets.counts.edits).toBe(0);
+  });
+
+  it('text hints: every needle and at least one prune path must appear as a key', () => {
+    withRules([]);
+    const { makePruner, textHint } = window.__bopboxScriptlets;
+    const prune = makePruner('a.[-].ad b.gone', 'meta.ok');
+    expect(prune.mayApply('{"meta":{"ok":1},"a":[{"ad":1}]}')).toBe(true);
+    expect(prune.mayApply('{"meta":{"ok":1},"b":{"gone":1}}')).toBe(true);
+    expect(prune.mayApply('{"meta":{"ok":1},"a":[{"video":1}]}')).toBe(false);
+    expect(prune.mayApply('{"a":[{"ad":1}]}')).toBe(false); // needle missing
+    expect(prune.mayApply({ not: 'text' })).toBe(true); // unknown input: never skip
+    expect(textHint([['x']])('{"y":1}')).toBe(false);
+    expect(textHint([['x']])('{"y":"x"}')).toBe(true); // may over-match (never under-match)
+  });
+
   it('skips scriptlets it does not implement, and installs late rules once', () => {
     withRules([String.raw`rmnt, script, window\,"fetch"`, 'no-xhr-if, /ads/']);
     expect(window.__bopboxScriptlets.counts.rules).toBe(0);
@@ -508,5 +622,330 @@ describe('scriptlets.js (uBO ##+js rules)', () => {
     withRules(['json-prune, keepme'], { adblock: false });
     expect(JSON.parse('{"keepme":1}')).toEqual({ keepme: 1 });
     expect(window.__bopboxScriptlets.counts.rules).toBe(0);
+  });
+});
+
+describe('gestures.js', () => {
+  const SCRIPTS = ['bridge.js', 'youtube.js', 'gestures.js'];
+  const VIEW = { w: 400, h: 800 };
+
+  beforeEach(() => {
+    resetWindow();
+    installMediaFakes();
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: VIEW.w });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: VIEW.h });
+    window.scrollTo = jest.fn();
+    // The scripts listen on window for good; remove each test's listeners so runs stay separate.
+    const add = window.addEventListener;
+    added = [];
+    window.addEventListener = function (...args) {
+      added.push(args);
+      return add.apply(this, args);
+    };
+    restoreAdd = () => { window.addEventListener = add; };
+  });
+  afterEach(() => {
+    restoreAdd();
+    for (const args of added) window.removeEventListener(...args);
+    window.history.pushState({}, '', '/');
+    jest.useRealTimers();
+  });
+
+  let added = [];
+  let restoreAdd = () => {};
+
+  const rect = (left, top, width, height) => ({ left, top, width, height, right: left + width, bottom: top + height });
+
+  // jsdom has no layout: give the elements the gestures measure a fixed place on screen.
+  function mountWatch() {
+    window.history.pushState({}, '', '/watch?v=dQw4w9WgXcQ');
+    document.body.innerHTML =
+      '<div id="player-container-id"><div id="movie_player" class="html5-video-player"><video></video>' +
+      '<button class="fullscreen-icon"></button></div></div>';
+    const box = document.getElementById('player-container-id');
+    box.getBoundingClientRect = () => rect(0, 48, VIEW.w, 225);
+    const video = box.querySelector('video');
+    video.getBoundingClientRect = () => rect(0, 48, VIEW.w, 225);
+    return { box, video };
+  }
+
+  function mountShort({ liked = false } = {}) {
+    window.history.pushState({}, '', '/shorts/dQw4w9WgXcQ');
+    document.body.innerHTML =
+      '<shorts-video><div id="movie_player"><video></video></div><div class="overlay"></div></shorts-video>' +
+      `<button aria-label="Dislike this video"></button><button id="like" aria-label="like this video along with 12K other people" aria-pressed="${liked}"></button>`;
+    const video = document.querySelector('video');
+    video.getBoundingClientRect = () => rect(0, 0, VIEW.w, VIEW.h);
+    for (const b of document.querySelectorAll('button')) b.getBoundingClientRect = () => rect(340, 400, 48, 48);
+    const like = document.getElementById('like');
+    const liked_ = jest.fn();
+    like.addEventListener('click', liked_);
+    return { video, like, liked: liked_, overlay: document.querySelector('.overlay') };
+  }
+
+  function touch(type, target, x, y) {
+    const e = new Event(type, { bubbles: true, cancelable: true });
+    const points = [{ clientX: x, clientY: y, identifier: 0, target }];
+    e.touches = type === 'touchend' ? [] : points;
+    e.changedTouches = points;
+    target.dispatchEvent(e);
+  }
+
+  function tap(target, x, y) {
+    touch('touchstart', target, x, y);
+    touch('touchend', target, x, y);
+    const e = new MouseEvent('click', { bubbles: true, cancelable: true, clientX: x, clientY: y });
+    target.dispatchEvent(e);
+    return e;
+  }
+
+  const G = () => window.__bopboxGesturesInternals;
+  const frame = () => document.getElementById('bopbox-browse');
+
+  it('Android back on a playing video shrinks it into the miniplayer instead of leaving', () => {
+    window.history.pushState({}, '', '/results?search_query=cats');
+    const posted = boot({ app: 'youtube', miniplayer: true, cosmetic: {} }, SCRIPTS);
+    jest.advanceTimersByTime(500); // remembers the page the video was opened from
+    const { box } = mountWatch();
+    jest.advanceTimersByTime(500);
+
+    expect(window.__bopbox.back()).toBe('handled');
+    jest.advanceTimersByTime(400); // settle animation
+    expect(G().mode()).toBe('mini');
+    expect(document.documentElement.classList.contains('bopbox-mini')).toBe(true);
+    // The rest of YouTube shows behind it, where the user came from.
+    expect(frame().name).toBe('bopbox-browse');
+    expect(frame().src).toBe('http://localhost/results?search_query=cats');
+    // Bottom right, scaled down, clear of the tab bar.
+    const g = G().miniGeometry(225);
+    expect(box.style.transform).toBe(`translate3d(${g.x}px,${g.y}px,0) scale(${g.s})`);
+    expect(g.x + g.w).toBeLessThanOrEqual(VIEW.w - 12);
+    expect(g.y + g.h).toBeLessThanOrEqual(VIEW.h - 64);
+    expect(posted).toContainEqual({ t: 'haptic', k: 'light' });
+
+    // Back again: nothing left to minimise, so the app steps into the background and keeps playing.
+    expect(window.__bopbox.back()).toBe('background');
+  });
+
+  it('tapping the miniplayer expands it; the close button stops the video', () => {
+    boot({ app: 'youtube', miniplayer: true, cosmetic: {} }, SCRIPTS);
+    const { box, video } = mountWatch();
+    video.play();
+    window.__bopbox.back();
+    jest.advanceTimersByTime(400);
+    const ui = document.getElementById('bopbox-mini-ui');
+
+    touch('touchstart', ui, 300, 600);
+    touch('touchend', ui, 300, 600);
+    jest.advanceTimersByTime(400);
+    expect(G().mode()).toBe('full');
+    expect(document.documentElement.classList.contains('bopbox-mini')).toBe(false);
+    expect(box.style.transform).toBe('');
+    expect(video.paused).toBe(false);
+
+    window.__bopbox.back();
+    jest.advanceTimersByTime(400);
+    ui.querySelector('.bopbox-close').click();
+    expect(G().mode()).toBe('closed');
+    expect(video.paused).toBe(true);
+    expect(window.__bopbox.back()).toBe('background');
+  });
+
+  it('dragging the player down past the threshold minimises; a short drag springs back', () => {
+    boot({ app: 'youtube', miniplayer: true, cosmetic: {} }, SCRIPTS);
+    const { box, video } = mountWatch();
+    jest.advanceTimersByTime(500);
+
+    touch('touchstart', video, 200, 120);
+    touch('touchmove', video, 202, 160);
+    expect(document.documentElement.classList.contains('bopbox-dragging')).toBe(true);
+    expect(box.style.transform).toMatch(/^translate3d\(.+px,40px,0\) scale\(0\.\d+\)$/);
+    expect(frame()).not.toBeNull(); // the browse page starts loading mid-drag
+    touch('touchend', video, 202, 170);
+    jest.advanceTimersByTime(400);
+    expect(G().mode()).toBe('full');
+    expect(box.style.transform).toBe('');
+
+    touch('touchstart', video, 200, 120);
+    touch('touchmove', video, 200, 200);
+    touch('touchmove', video, 200, 420);
+    touch('touchend', video, 200, 420);
+    jest.advanceTimersByTime(400);
+    expect(G().mode()).toBe('mini');
+  });
+
+  it('leaves the seek bar and sideways drags to YouTube', () => {
+    boot({ app: 'youtube', miniplayer: true, cosmetic: {} }, SCRIPTS);
+    const { box, video } = mountWatch();
+    jest.advanceTimersByTime(500);
+    touch('touchstart', video, 200, 268); // bottom strip of the player
+    touch('touchmove', video, 200, 400);
+    touch('touchend', video, 200, 400);
+    touch('touchstart', video, 100, 120);
+    touch('touchmove', video, 300, 130);
+    touch('touchend', video, 300, 130);
+    jest.advanceTimersByTime(400);
+    expect(G().mode()).toBe('full');
+    expect(box.style.transform).toBe('');
+  });
+
+  it('swiping the player up goes fullscreen through YouTube’s own button', () => {
+    boot({ app: 'youtube', miniplayer: true, cosmetic: {} }, SCRIPTS);
+    const { video } = mountWatch();
+    const fullscreen = jest.fn();
+    document.querySelector('.fullscreen-icon').addEventListener('click', fullscreen);
+    jest.advanceTimersByTime(500);
+    touch('touchstart', video, 200, 200);
+    touch('touchmove', video, 200, 150);
+    touch('touchend', video, 200, 110);
+    jest.advanceTimersByTime(300);
+    expect(fullscreen).toHaveBeenCalledTimes(1);
+  });
+
+  it('with the miniplayer switched off, back and drags behave like the plain site', () => {
+    const cfg = { app: 'youtube', miniplayer: false, cosmetic: {} };
+    boot(cfg, SCRIPTS);
+    const { box, video } = mountWatch();
+    jest.advanceTimersByTime(500);
+    expect(window.__bopbox.back()).toBe('none');
+    touch('touchstart', video, 200, 120);
+    touch('touchmove', video, 200, 420);
+    touch('touchend', video, 200, 420);
+    expect(G().mode()).toBe('full');
+    expect(box.style.transform).toBe('');
+    expect(document.documentElement.classList.contains('bopbox-mini-on')).toBe(false);
+
+    cfg.miniplayer = true; // switched on live from Settings
+    jest.advanceTimersByTime(500);
+    expect(window.__bopbox.back()).toBe('handled');
+  });
+
+  it('back is left to the app on pages without a video', () => {
+    boot({ app: 'youtube', miniplayer: true, cosmetic: {} }, SCRIPTS);
+    expect(window.__bopbox.back()).toBe('none');
+    mountShort();
+    expect(window.__bopbox.back()).toBe('none');
+  });
+
+  it('a video picked behind the miniplayer opens in the main page; the same one just expands', () => {
+    boot({ app: 'youtube', miniplayer: true, cosmetic: {} }, SCRIPTS);
+    mountWatch();
+    window.__bopbox.back();
+    jest.advanceTimersByTime(400);
+    const followed = [];
+    document.addEventListener('click', (e) => {
+      if (e.target.tagName === 'A') { followed.push(e.target.href); e.preventDefault(); }
+    });
+
+    G().openFromFrame('/watch?v=dQw4w9WgXcQ&t=10');
+    jest.advanceTimersByTime(400);
+    expect(G().mode()).toBe('full');
+    expect(followed).toEqual([]);
+
+    window.__bopbox.back();
+    jest.advanceTimersByTime(400);
+    G().openFromFrame('https://localhost/watch?v=aaaaaaaaaaa');
+    expect(followed).toEqual(['https://localhost/watch?v=aaaaaaaaaaa']);
+    expect(G().mode()).toBe('full');
+    expect(document.documentElement.classList.contains('bopbox-mini')).toBe(false);
+  });
+
+  it('holding the player plays at 2× until the finger lifts', () => {
+    const posted = boot({ app: 'youtube', miniplayer: true, cosmetic: {} }, SCRIPTS);
+    const { video } = mountWatch();
+    video.play();
+    video.playbackRate = 1.25;
+    jest.advanceTimersByTime(500);
+    touch('touchstart', video, 200, 120);
+    jest.advanceTimersByTime(300);
+    expect(video.playbackRate).toBe(1.25); // not yet: a tap must stay a tap
+    jest.advanceTimersByTime(200);
+    expect(video.playbackRate).toBe(2);
+    expect(document.getElementById('bopbox-pill').classList.contains('on')).toBe(true);
+    touch('touchend', video, 200, 120);
+    expect(video.playbackRate).toBe(1.25);
+    expect(document.getElementById('bopbox-pill').classList.contains('on')).toBe(false);
+    expect(posted).toContainEqual({ t: 'haptic', k: 'light' });
+    // The click that follows a long press must not toggle the player.
+    const seen = jest.fn();
+    video.addEventListener('click', seen);
+    video.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    expect(seen).not.toHaveBeenCalled();
+  });
+
+  it('a paused video is not sped up by a hold, and moving cancels the hold', () => {
+    boot({ app: 'youtube', miniplayer: true, cosmetic: {} }, SCRIPTS);
+    const { video } = mountWatch();
+    jest.advanceTimersByTime(500);
+    touch('touchstart', video, 200, 120);
+    jest.advanceTimersByTime(600);
+    expect(video.playbackRate).toBe(1);
+    touch('touchend', video, 200, 120);
+
+    video.play();
+    touch('touchstart', video, 200, 120);
+    touch('touchmove', video, 260, 122);
+    jest.advanceTimersByTime(600);
+    expect(video.playbackRate).toBe(1);
+  });
+
+  it('double tapping a Short likes it once, with a heart and a haptic', () => {
+    const posted = boot({ app: 'youtube', cosmetic: {} }, SCRIPTS);
+    const { overlay, liked, video } = mountShort();
+    video.play();
+    const siteTap = jest.fn();
+    overlay.addEventListener('click', siteTap);
+
+    tap(overlay, 200, 400);
+    jest.advanceTimersByTime(120);
+    tap(overlay, 204, 398);
+    expect(liked).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('.bopbox-heart')).not.toBeNull();
+    expect(posted).toContainEqual({ t: 'haptic', k: 'confirm' });
+    jest.advanceTimersByTime(1000);
+    expect(siteTap).not.toHaveBeenCalled(); // neither tap reached YouTube: playback never flickered
+    expect(video.paused).toBe(false);
+    expect(document.querySelector('.bopbox-heart')).toBeNull();
+  });
+
+  it('double tapping a Short that is already liked shows the heart but does not unlike it', () => {
+    boot({ app: 'youtube', cosmetic: {} }, SCRIPTS);
+    const { overlay, liked } = mountShort({ liked: true });
+    tap(overlay, 200, 400);
+    tap(overlay, 200, 400);
+    expect(liked).not.toHaveBeenCalled();
+    expect(document.querySelector('.bopbox-heart')).not.toBeNull();
+  });
+
+  it('a single tap on a Short still reaches YouTube, a moment later', () => {
+    boot({ app: 'youtube', cosmetic: {} }, SCRIPTS);
+    const { overlay, liked, video } = mountShort();
+    video.play();
+    const siteTap = jest.fn(() => video.pause());
+    overlay.addEventListener('click', siteTap);
+    tap(overlay, 200, 400);
+    expect(siteTap).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(300);
+    expect(siteTap).toHaveBeenCalledTimes(1);
+    expect(liked).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(300);
+    expect(video.paused).toBe(true); // toggled exactly once
+  });
+
+  it('a single tap pauses the Short itself if YouTube ignores the replayed tap', () => {
+    boot({ app: 'youtube', cosmetic: {} }, SCRIPTS);
+    const { overlay, video } = mountShort();
+    video.play();
+    tap(overlay, 200, 400);
+    jest.advanceTimersByTime(600);
+    expect(video.paused).toBe(true);
+  });
+
+  it('taps on a Short’s own buttons are never delayed or swallowed', () => {
+    boot({ app: 'youtube', cosmetic: {} }, SCRIPTS);
+    const { like, liked } = mountShort();
+    const e = tap(like, 360, 420);
+    expect(liked).toHaveBeenCalledTimes(1);
+    expect(e.defaultPrevented).toBe(false);
   });
 });

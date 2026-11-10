@@ -24,7 +24,13 @@ object SettingsStore {
     if (migrated != stored) {
       prefs.edit().apply {
         putInt(Settings.VERSION_KEY, Settings.VERSION)
-        (migrated["defaultQuality"] as? String)?.let { putString("defaultQuality", it) }
+        for ((k, v) in migrated) {
+          if (v == stored[k]) continue
+          when (v) {
+            is Boolean -> putBoolean(k, v)
+            is String -> putString(k, v)
+          }
+        }
       }.apply()
     }
   }

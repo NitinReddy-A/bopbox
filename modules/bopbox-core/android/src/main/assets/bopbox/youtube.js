@@ -14,6 +14,29 @@
   var cfg = B.cfg || {};
 
   // ---------------------------------------------------------------------------------------
+  // One timer for every periodic job. Jobs marked `foreground` only touch the visible page
+  // (buttons, labels, classes) and sleep while Tube is in the background, so background
+  // listening does not keep waking the CPU for DOM work nobody sees.
+  // ---------------------------------------------------------------------------------------
+  var jobs = [];
+  var TICK = 250;
+
+  function every(ms, fn, foreground) {
+    jobs.push({ ms: ms, fn: fn, foreground: !!foreground, next: 0 });
+  }
+
+  setInterval(function () {
+    var now = Date.now();
+    var hidden = B.isBackground ? B.isBackground() : false;
+    for (var i = 0; i < jobs.length; i++) {
+      var j = jobs[i];
+      if ((j.foreground && hidden) || now < j.next) continue;
+      j.next = now + j.ms;
+      try { j.fn(); } catch (e) {}
+    }
+  }, TICK);
+
+  // ---------------------------------------------------------------------------------------
   // JSON pruning
   // ---------------------------------------------------------------------------------------
   var AD_KEYS = ['adPlacements', 'adSlots', 'playerAds', 'adBreakHeartbeatParams', 'adBreakParams', 'adInferredBlockingStatus'];
@@ -190,7 +213,7 @@
     }
   }
 
-  if (cfg.adblock) setInterval(tickAds, 250);
+  every(250, function () { if (cfg.adblock) tickAds(); });
 
   // ---------------------------------------------------------------------------------------
   // SponsorBlock (community-sourced skips for sponsor reads, self-promo, subscribe nags).
@@ -242,16 +265,12 @@
     }
   }
 
-  setInterval(function () {
-    if (cfg.sponsorBlock) tickSponsors();
-  }, 500);
+  every(500, function () { if (cfg.sponsorBlock) tickSponsors(); });
 
   // ---------------------------------------------------------------------------------------
   // Keep "Video paused. Continue watching?" away during long background sessions.
   // ---------------------------------------------------------------------------------------
-  setInterval(function () {
-    try { window._lact = Date.now(); } catch (e) {}
-  }, 60000);
+  every(60000, function () { window._lact = Date.now(); });
 
   // ---------------------------------------------------------------------------------------
   // Signed-out header shows "Open App" where "Sign in" should be. App links are blocked inside
@@ -282,7 +301,7 @@
     }
   }
 
-  setInterval(fixSignInButton, 1000);
+  every(1000, fixSignInButton, true);
 
 
   // ---------------------------------------------------------------------------------------
@@ -308,12 +327,29 @@
    * video start at the chosen quality instead of 240p (and avoids the stall of switching up
    * mid-playback). This is what ReVanced's "remember video quality" does inside the app.
    */
+  /**
+   * The quality a video should start at: the preference, capped on slow or metered connections
+   * so the first frame does not wait on a large 1080p segment over a weak mobile link.
+   * Chrome's Network Information API reports downlink up to 10 Mbps.
+   */
+  function startQuality() {
+    var wanted = cfg.defaultQuality;
+    if (!wanted || wanted === 'auto') return wanted;
+    var c = navigator.connection;
+    if (!c) return wanted;
+    var cap = 0;
+    if (c.saveData || /(^|-)2g$/.test(c.effectiveType || '')) cap = 360;
+    else if (c.effectiveType === '3g' || (c.downlink > 0 && c.downlink < 2)) cap = 480;
+    else if (c.downlink > 0 && c.downlink < 5) cap = 720;
+    return cap && cap < Number(wanted) ? String(cap) : wanted;
+  }
+
   var STICKY_KEY = 'yt-player-quality';
   var STICKY_OWNER = 'bopbox-player-quality';
   var stickyFor = null;
 
   function rememberQuality() {
-    var wanted = cfg.defaultQuality;
+    var wanted = startQuality();
     if (wanted === stickyFor) return;
     stickyFor = wanted;
     try {
@@ -344,7 +380,8 @@
     var v = p && p.querySelector('video');
     var id = currentVideoId();
     if (!v || !id || isAd() || !isFinite(v.duration) || v.duration <= 0) return;
-    v.loop = !!cfg.alwaysRepeat;
+    v.loop = shouldLoop();
+    watchEnded(v);
     if (tuned === id) return;
     tuned = id;
     var speed = Number(cfg.defaultSpeed) || 1;
@@ -354,8 +391,9 @@
       } catch (e) {}
       v.playbackRate = speed;
     }
-    if (cfg.defaultQuality && cfg.defaultQuality !== 'auto' && p.getAvailableQualityLevels) {
-      var q = pickQuality(Number(cfg.defaultQuality), p.getAvailableQualityLevels());
+    var target = startQuality();
+    if (target && target !== 'auto' && p.getAvailableQualityLevels) {
+      var q = pickQuality(Number(target), p.getAvailableQualityLevels());
       var current = p.getPlaybackQuality ? p.getPlaybackQuality() : null;
       // Already there (the sticky entry did its job): switching again would only rebuffer.
       if (q && q !== current) {
@@ -367,7 +405,37 @@
     }
   }
 
-  setInterval(tunePlayer, 500);
+  every(500, tunePlayer);
+
+  // ---------------------------------------------------------------------------------------
+  // Replay: Shorts always loop, like the app; regular videos loop with "Always repeat".
+  // `loop` is what YouTube's own Loop option sets; the `ended` handler covers players that
+  // finish the stream themselves.
+  // ---------------------------------------------------------------------------------------
+  function isShortsPage() {
+    return location.pathname.indexOf('/shorts/') === 0;
+  }
+
+  function shouldLoop() {
+    return isShortsPage() || !!cfg.alwaysRepeat;
+  }
+
+  function watchEnded(v) {
+    if (v.__bopboxEnded) return;
+    v.__bopboxEnded = true;
+    v.addEventListener('ended', function () {
+      if (!shouldLoop() || isAd()) return;
+      var p = player();
+      try {
+        if (p && p.seekTo && !isShortsPage()) p.seekTo(0, true);
+        else v.currentTime = 0;
+      } catch (e) {
+        v.currentTime = 0;
+      }
+      var r = v.play();
+      if (r && r.catch) r.catch(function () {});
+    });
+  }
 
   // ---------------------------------------------------------------------------------------
   // Return YouTube Dislike: the public count, shown on the dislike button.
@@ -386,7 +454,9 @@
   }
 
   function dislikeButton() {
-    var buttons = document.querySelectorAll('button[aria-label]');
+    // The watch action bar first: scanning every labelled button on a long page is the slow path.
+    var bar = document.querySelector('ytm-slim-video-action-bar-renderer, .slim-video-action-bar-actions');
+    var buttons = (bar || document).querySelectorAll('button[aria-label]');
     for (var i = 0; i < buttons.length; i++) {
       if (/dislike/i.test(buttons[i].getAttribute('aria-label'))) return buttons[i];
     }
@@ -431,7 +501,7 @@
     if (label.textContent !== text) label.textContent = text;
   }
 
-  setInterval(tickDislikes, 700);
+  every(700, tickDislikes, true);
 
   // ---------------------------------------------------------------------------------------
   // Feed and player clean-up, switched live by classes on <html>.
@@ -463,7 +533,7 @@
   }
 
   syncClasses();
-  setInterval(syncClasses, 1000);
+  every(1000, syncClasses, true);
 
   // ---------------------------------------------------------------------------------------
   // The app's own Settings, reachable from YouTube's top bar like a built-in control.
@@ -532,7 +602,7 @@
     else header.appendChild(btn);
   }
 
-  setInterval(injectSettingsButton, 800);
+  every(800, injectSettingsButton, true);
 
   // ---------------------------------------------------------------------------------------
   // Hooks for the bridge.
@@ -568,5 +638,5 @@
   });
 
   window.__bopboxYouTubeStats = stats;
-  window.__bopboxYouTubeInternals = { prune: prune, isAd: isAd, pickQuality: pickQuality, shortCount: shortCount, rememberQuality: rememberQuality };
+  window.__bopboxYouTubeInternals = { prune: prune, isAd: isAd, pickQuality: pickQuality, shortCount: shortCount, rememberQuality: rememberQuality, startQuality: startQuality };
 })();

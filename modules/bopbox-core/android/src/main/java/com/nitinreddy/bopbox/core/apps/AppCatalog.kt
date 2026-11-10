@@ -50,7 +50,7 @@ object AppCatalog {
     homeUrl = "https://m.youtube.com/",
     internalHosts = listOf("youtube.com", "youtu.be", "youtube-nocookie.com", "ytimg.com", "consent.youtube.com") + authHosts,
     defaultMode = SiteMode.MOBILE,
-    scripts = listOf("bridge.js", "scriptlets.js", "youtube.js"),
+    scripts = listOf("bridge.js", "scriptlets.js", "youtube.js", "gestures.js"),
     searchUrl = { q -> "https://m.youtube.com/results?search_query=" + UrlUtils.encode(q) },
     needsDrm = false,
     supportsPip = true,

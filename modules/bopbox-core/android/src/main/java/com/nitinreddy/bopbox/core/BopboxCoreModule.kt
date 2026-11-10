@@ -68,6 +68,11 @@ class BopboxCoreModule : Module() {
       AdBlocker.addListener(statsListener)
       PipController.addListener(pipListener)
       WebViewPool.addUiListener(uiListener)
+      // Start loading YouTube now, in parallel with the JS bundle, instead of when the first
+      // React render mounts the view (which then just picks this WebView up from the pool).
+      appContext.currentActivity?.let { activity ->
+        main.post { runCatching { WebViewPool.obtain(activity, AppCatalog.YOUTUBE.id) } }
+      }
     }
 
     OnDestroy {
@@ -155,6 +160,7 @@ class BopboxCoreModule : Module() {
       Prop("appId") { view: BrowserView, appId: String -> view.setAppId(appId) }
 
       AsyncFunction("goBack") { view: BrowserView -> view.goBack() }
+      AsyncFunction("back") { view: BrowserView -> view.back() }
       AsyncFunction("goForward") { view: BrowserView -> view.goForward() }
       AsyncFunction("reload") { view: BrowserView -> view.reload() }
       AsyncFunction("goHome") { view: BrowserView -> view.goHome() }

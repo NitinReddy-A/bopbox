@@ -92,7 +92,7 @@ object AdBlocker {
   fun intercept(request: WebResourceRequest, pageUrl: String?): WebResourceResponse? {
     val e = engine ?: return null
     val url = request.url?.toString() ?: return null
-    if (!url.startsWith("http")) return null
+    if (!url.startsWith("http") || StreamHosts.isStream(url)) return null
     val type = ResourceTypeGuesser.guess(
       url = url,
       accept = request.requestHeaders?.entries?.firstOrNull { it.key.equals("Accept", true) }?.value,

@@ -22,6 +22,7 @@ export type Settings = {
   hideCards: boolean;
   swipeControls: boolean;
   alwaysRepeat: boolean;
+  miniplayer: boolean;
 };
 
 export type NowPlaying = {
@@ -85,6 +86,8 @@ export type BrowserViewProps = {
 /** Imperative handle exposed by <BrowserView ref>. */
 export type BrowserViewRef = {
   goBack(): Promise<void>;
+  /** Android back: minimise a playing video, else go back a page, else leave to the background. */
+  back(): Promise<void>;
   goForward(): Promise<void>;
   reload(): Promise<void>;
   goHome(): Promise<void>;

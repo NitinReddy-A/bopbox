@@ -36,6 +36,7 @@ object PageScripts {
       put("hideShorts", settings.hideShorts)
       put("hideCards", settings.hideCards)
       put("alwaysRepeat", settings.alwaysRepeat)
+      put("miniplayer", settings.miniplayer)
       val css = JSONObject()
       if (settings.adblockFor(app.id)) {
         cosmeticByHost.forEach { (host, selectors) -> if (selectors.isNotEmpty()) css.put(host, JSONArray(selectors)) }
@@ -73,6 +74,19 @@ object PageScripts {
         append("\n")
       }
     }
+  }
+
+  /**
+   * Expression asking the page what Android back should do: "handled" (the page dealt with it,
+   * e.g. minimised the player), "background" (leave the app, keep playing) or "none".
+   */
+  const val BACK_QUERY = "(window.__bopbox&&window.__bopbox.back)?window.__bopbox.back():'none'"
+
+  /** The page's answer to [BACK_QUERY], as evaluateJavascript returns it (a JSON string). */
+  fun backAnswer(raw: String?): String = when (raw?.trim()?.trim('"')) {
+    "handled" -> "handled"
+    "background" -> "background"
+    else -> "none"
   }
 
   /** JS snippet that delivers a command to bridge.js. Arguments are JSON-encoded, never concatenated raw. */
