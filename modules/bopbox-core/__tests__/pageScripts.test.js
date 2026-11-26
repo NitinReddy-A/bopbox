@@ -14,6 +14,7 @@ const read = (name) => fs.readFileSync(path.join(ASSETS, name), 'utf8');
 const nativeJsonParse = JSON.parse;
 const nativePlay = HTMLMediaElement.prototype.play;
 const nativeResponse = window.Response;
+const nativePushState = window.history.pushState;
 
 function boot(config, scripts) {
   jest.useFakeTimers();
@@ -27,6 +28,7 @@ function boot(config, scripts) {
 function resetWindow() {
   JSON.parse = nativeJsonParse;
   HTMLMediaElement.prototype.play = nativePlay;
+  window.history.pushState = nativePushState;
   delete window.__bopbox;
   delete window.__bopboxYouTube;
   delete window.__bopboxScriptlets;
@@ -128,6 +130,27 @@ describe('bridge.js', () => {
     window.__bopbox.command('background', 0);
     video.pause(); // foreground: the page is in charge again
     expect(video.paused).toBe(true);
+  });
+
+  it('a frame of the page follows the main page’s settings and background state', () => {
+    const cfg = { app: 'youtube', backgroundPlay: true, hideShorts: false, cosmetic: {} };
+    boot(cfg, ['bridge.js']);
+    const iframe = document.createElement('iframe');
+    document.body.appendChild(iframe);
+    const fw = iframe.contentWindow;
+    fw.__bopboxConfig = { ...cfg }; // the copy native injected when the frame loaded
+    fw.eval(read('bridge.js'));
+    const B = fw.__bopbox;
+    expect(B.inFrame).toBe(true);
+    expect(B.isBackground()).toBe(false);
+
+    // Native only reaches the main frame; the frame must still see both changes.
+    window.__bopbox.command('background', 1);
+    Object.assign(window.__bopboxConfig, { hideShorts: true }); // PageScripts.liveUpdate
+    expect(B.isBackground()).toBe(true);
+    expect(B.cfg.hideShorts).toBe(true);
+    window.__bopbox.command('background', 0);
+    expect(B.isBackground()).toBe(false);
   });
 
   it('toggles the PiP presentation class', () => {
@@ -386,6 +409,21 @@ describe('youtube.js player features', () => {
     expect(document.querySelector('.bopbox-dislikes').textContent).toBe('2.3M');
     const { shortCount } = window.__bopboxYouTubeInternals;
     expect([shortCount(950), shortCount(1234), shortCount(52160), shortCount(521600)]).toEqual(['950', '1.2K', '52K', '522K']);
+    delete global.fetch;
+  });
+
+  it('puts a Short’s dislike count on that Short, not on a neighbour still in the feed', async () => {
+    global.fetch = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ dislikes: 1234 }) }));
+    window.history.pushState({}, '', '/shorts/dQw4w9WgXcQ');
+    boot({ app: 'youtube', returnDislike: true, cosmetic: {} }, ['bridge.js', 'youtube.js']);
+    document.body.innerHTML =
+      '<ytm-reel-video-renderer><button id="prev" aria-label="Dislike this video"></button></ytm-reel-video-renderer>' +
+      '<ytm-reel-video-renderer is-active><button id="current" aria-label="Dislike this video"></button></ytm-reel-video-renderer>';
+    jest.advanceTimersByTime(800);
+    for (let i = 0; i < 8; i++) await Promise.resolve();
+    jest.advanceTimersByTime(800);
+    expect(document.querySelector('#current .bopbox-dislikes').textContent).toBe('1.2K');
+    expect(document.querySelector('#prev .bopbox-dislikes')).toBeNull();
     delete global.fetch;
   });
 
@@ -964,6 +1002,55 @@ describe('gestures.js', () => {
     expect(followed).toEqual(['https://localhost/watch?v=aaaaaaaaaaa']);
     expect(G().mode()).toBe('full');
     expect(document.documentElement.classList.contains('bopbox-mini')).toBe(false);
+  });
+
+  it('back walks the browse page only while its history is the newest', () => {
+    boot({ app: 'youtube', miniplayer: true, cosmetic: {} }, SCRIPTS);
+    mountWatch().video.play();
+    window.__bopbox.back();
+    jest.advanceTimersByTime(400);
+    const fw = frame().contentWindow;
+    const fromFrame = (data) => window.dispatchEvent(new MessageEvent('message', { data, origin: location.origin, source: fw }));
+    const frameBack = jest.spyOn(fw.history, 'back').mockImplementation(() => {});
+
+    fromFrame({ __bopboxNav: 'push' });
+    fromFrame({ __bopboxNav: 'push' });
+    expect(G().frameDepth()).toBe(2);
+    expect(window.__bopbox.back()).toBe('handled');
+    expect(frameBack).toHaveBeenCalledTimes(1);
+    fromFrame({ __bopboxNav: 'pop' });
+
+    // The main page moves on by itself (autoplay): its entry is now the newest in the tab's
+    // history, so history.back() from the frame would undo the main page's navigation.
+    window.history.pushState({}, '', '/watch?v=aaaaaaaaaaa');
+    expect(G().frameDepth()).toBe(0);
+    expect(window.__bopbox.back()).toBe('background');
+    expect(frameBack).toHaveBeenCalledTimes(1);
+  });
+
+  it('a drag never leaves the dragging state behind if YouTube replaces the player mid-drag', () => {
+    boot({ app: 'youtube', miniplayer: true, cosmetic: {} }, SCRIPTS);
+    const { box, video } = mountWatch();
+    jest.advanceTimersByTime(500);
+    touch('touchstart', video, 200, 120);
+    touch('touchmove', video, 200, 200);
+    expect(document.documentElement.classList.contains('bopbox-dragging')).toBe(true);
+    box.remove();
+    touch('touchend', document.body, 200, 420);
+    expect(document.documentElement.classList.contains('bopbox-dragging')).toBe(false);
+    expect(G().mode()).toBe('full');
+  });
+
+  it('a Short activated without a touch (TalkBack, mouse) toggles exactly once', () => {
+    boot({ app: 'youtube', cosmetic: {} }, SCRIPTS);
+    const { overlay, video } = mountShort();
+    video.play();
+    const siteTap = jest.fn(() => (video.paused ? video.play() : video.pause()));
+    overlay.addEventListener('click', siteTap);
+    overlay.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: 200, clientY: 400 }));
+    jest.advanceTimersByTime(600);
+    expect(siteTap).toHaveBeenCalledTimes(1);
+    expect(video.paused).toBe(true);
   });
 
   it('holding the player plays at 2× until the finger lifts', () => {

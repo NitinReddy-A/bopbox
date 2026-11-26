@@ -541,6 +541,18 @@
   }
 
   // Messages from the browse frame: a video was tapped, or the frame navigated.
+  /**
+   * Back in the miniplayer walks the frame's history, but history.back() moves through the
+   * tab's joint session history. That only steps the frame while the frame's entries are the
+   * newest; once the main page pushes one of its own (autoplay, a video opened from the frame),
+   * it would step the main page instead, so the frame's count starts again from there.
+   */
+  var mainPushState = history.pushState;
+  history.pushState = function () {
+    frameDepth = 0;
+    return mainPushState.apply(this, arguments);
+  };
+
   window.addEventListener('message', function (e) {
     if (e.origin !== location.origin || !frame || e.source !== frame.contentWindow || !e.data) return;
     var d = e.data;
@@ -770,13 +782,12 @@
     var dy = p.y - t.y;
     var v = velocity(t.samples);
     var box = playerBox();
-    if (t.axis === 'down' && box) {
+    if (t.axis === 'down') {
       e.stopPropagation();
+      rootClasses().remove('bopbox-dragging'); // even if YouTube replaced the player mid-drag
+      if (!box) return;
       var docked = (dy > t.travel * 0.35 || (v > 0.55 && dy > 40)) && enterMini(true, { top: t.top, height: t.height });
-      if (docked) {
-        rootClasses().remove('bopbox-dragging');
-      } else {
-        rootClasses().remove('bopbox-dragging');
+      if (!docked) {
         rootClasses().add('bopbox-settling');
         box.style.transform = '';
         settle(box, function () { rootClasses().remove('bopbox-settling'); });
@@ -886,7 +897,12 @@
       }, 120);
       return;
     }
-    var tap = { x: p.x, y: p.y, t: Date.now(), target: e.target, pausedBefore: touchPausedBefore };
+    // A finger tap: the state at touchstart (the site may toggle on touch, before this click).
+    // A click with no touch (TalkBack, a mouse): the state right now.
+    var fromTouch = Date.now() - touchPausedAt < 1000;
+    var now = shortsVideo();
+    var tap = { x: p.x, y: p.y, t: Date.now(), target: e.target, pausedBefore: fromTouch ? touchPausedBefore : !now || now.paused };
+    touchPausedAt = 0;
     tap.timer = setTimeout(function () {
       if (pendingTap === tap) pendingTap = null;
       replayTap(tap);
@@ -895,11 +911,13 @@
   }, true);
 
   var touchPausedBefore = true;
+  var touchPausedAt = 0;
 
   function shortsTouchStart(e) {
     if (pendingTap) return; // second tap of a double tap: the first tap's state is what counts
     var v = shortsVideo();
     touchPausedBefore = !v || v.paused;
+    touchPausedAt = Date.now();
     var p = point(e);
     touch = { kind: 'shorts', x: p.x, y: p.y, t: Date.now(), held: false, holdTimer: null };
     touch.holdTimer = setTimeout(function () {

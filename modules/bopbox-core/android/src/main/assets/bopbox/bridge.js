@@ -15,6 +15,16 @@
   /** Inside Tube's browse frame (the page behind the miniplayer), not the main page. */
   var inFrame = false;
   try { inFrame = window.top !== window; } catch (e) { inFrame = true; }
+  /**
+   * The main page's bridge, when this is a frame of it. Native only reaches the main frame
+   * (live setting changes, background/foreground), so a frame reads both through it instead of
+   * keeping the values it was loaded with.
+   */
+  var mainBridge = null;
+  if (inFrame) {
+    try { mainBridge = window.top.__bopbox || null; } catch (e) {}
+    if (mainBridge && mainBridge.cfg) cfg = mainBridge.cfg;
+  }
 
   /** Messages a frame may pass up to native through the main page. */
   var RELAYED = { openSettings: 1, haptic: 1, blocked: 1 };
@@ -355,7 +365,12 @@
     registerSite: function (hooks) { site = hooks || {}; },
     inFrame: inFrame,
     /** True while Tube is in the background or this page is off screen. */
-    isBackground: function () { return inBackground; },
+    isBackground: function () {
+      if (mainBridge) {
+        try { return mainBridge.isBackground(); } catch (e) {}
+      }
+      return inBackground;
+    },
     /** Android back: 'handled', 'background' (leave the app, keep playing) or 'none'. */
     back: function () {
       try { return (backHandler && backHandler()) || 'none'; } catch (e) { return 'none'; }

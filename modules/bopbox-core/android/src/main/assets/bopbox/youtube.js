@@ -454,8 +454,9 @@
   }
 
   function dislikeButton() {
-    // The watch action bar first: scanning every labelled button on a long page is the slow path.
-    var bar = document.querySelector('ytm-slim-video-action-bar-renderer, .slim-video-action-bar-actions');
+    // The watch action bar, or the Short on screen (the feed keeps its neighbours mounted, each
+    // with a dislike button of its own); the whole page only as the slow last resort.
+    var bar = document.querySelector('ytm-slim-video-action-bar-renderer, .slim-video-action-bar-actions, ytm-reel-video-renderer[is-active]');
     var buttons = (bar || document).querySelectorAll('button[aria-label]');
     for (var i = 0; i < buttons.length; i++) {
       if (/dislike/i.test(buttons[i].getAttribute('aria-label'))) return buttons[i];
