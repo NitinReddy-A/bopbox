@@ -32,6 +32,16 @@ class TubeFeaturesTest {
     assertNull(IncomingLinks.resolve("android.intent.action.MAIN", "https://youtu.be/x", null))
   }
 
+  @Test fun `a link opens once, not again when Android hands the launch intent back`() {
+    assertTrue(IncomingLinks.isNew(flags = 0, alreadyHandled = false))
+    // Activity recreated (font size, language): the same Intent, carrying our mark.
+    assertFalse(IncomingLinks.isNew(flags = 0, alreadyHandled = true))
+    // Reopened from Recents after the process was killed: the original intent, replayed.
+    assertFalse(IncomingLinks.isNew(flags = IncomingLinks.FLAG_LAUNCHED_FROM_HISTORY or 0x10000000, alreadyHandled = false))
+    assertTrue(IncomingLinks.isNew(flags = 0x10000000, alreadyHandled = false)) // NEW_TASK alone is a fresh share
+    assertEquals(android.content.Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY, IncomingLinks.FLAG_LAUNCHED_FROM_HISTORY)
+  }
+
   @Test fun `swiping up raises the level, down lowers it, clamped`() {
     val height = 1000
     assertEquals(0.5f + 100f / (height * SwipeMath.SWEEP), SwipeMath.level(0.5f, -100f, height), 1e-4f)

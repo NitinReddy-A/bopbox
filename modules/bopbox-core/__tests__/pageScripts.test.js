@@ -349,6 +349,26 @@ describe('youtube.js player features', () => {
     expect(startQuality()).toBe('auto');
   });
 
+  it('a low early bandwidth estimate on Wi-Fi does not hold videos below the preference', () => {
+    const cfg = { app: 'youtube', defaultQuality: '1080', cosmetic: {} };
+    // Chrome's stock estimate before it has measured anything.
+    const net = { type: 'wifi', effectiveType: '4g', downlink: 2, saveData: false };
+    Object.defineProperty(navigator, 'connection', { configurable: true, value: net });
+    boot(cfg, ['bridge.js', 'youtube.js']);
+    const { startQuality } = window.__bopboxYouTubeInternals;
+    expect(startQuality()).toBe('1080');
+    net.type = 'ethernet';
+    expect(startQuality()).toBe('1080');
+    // A mobile link at the same estimate still starts lower.
+    net.type = 'cellular';
+    expect(startQuality()).toBe('720');
+    // Save Data and a slow link class still cap on Wi-Fi.
+    Object.assign(net, { type: 'wifi', saveData: true });
+    expect(startQuality()).toBe('360');
+    Object.assign(net, { saveData: false, effectiveType: '3g' });
+    expect(startQuality()).toBe('480');
+  });
+
   it('stops page upkeep while in the background, but keeps skipping ads and sponsors', () => {
     boot({ app: 'youtube', adblock: true, cosmetic: {} }, ['bridge.js', 'youtube.js']);
     const { v, p } = mountPlayer();

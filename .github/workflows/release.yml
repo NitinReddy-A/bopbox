@@ -45,7 +45,7 @@ jobs:
           npm run typecheck
           npm run lint
 
-      # Decide whether this run releases: only pushes to tube (or a manual run), only for a
+      # Decide whether this run releases: only pushes (or manual runs) on tube, only for a
       # version without a release, and only once the Expo token is configured.
       - name: Plan the release
         id: plan
@@ -58,6 +58,8 @@ jobs:
           release=false
           if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
             note="Pull request: tests only."
+          elif [ "$GITHUB_REF" != "refs/heads/tube" ]; then
+            note="Run on $GITHUB_REF: tests only. Releases are built from tube."
           elif gh release view "$tag" >/dev/null 2>&1; then
             note="Release $tag already exists; nothing to build."
           elif [ -z "$EXPO_TOKEN" ]; then

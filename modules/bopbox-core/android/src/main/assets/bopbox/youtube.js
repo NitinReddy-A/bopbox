@@ -330,17 +330,22 @@
   /**
    * The quality a video should start at: the preference, capped on slow or metered connections
    * so the first frame does not wait on a large 1080p segment over a weak mobile link.
-   * Chrome's Network Information API reports downlink up to 10 Mbps.
+   * Chrome's Network Information API reports downlink up to 10 Mbps. That figure is an estimate,
+   * and at start-up (when this runs) it is often still Chrome's stock guess for the connection
+   * type rather than anything measured, so it only steers the cap on a mobile link: on Wi-Fi it
+   * would hold fast connections at 720p. Save Data and a 2G/3G link cap everywhere.
    */
   function startQuality() {
     var wanted = cfg.defaultQuality;
     if (!wanted || wanted === 'auto') return wanted;
     var c = navigator.connection;
     if (!c) return wanted;
+    var mobile = !c.type || c.type === 'cellular';
+    var down = mobile && c.downlink > 0 ? c.downlink : 0;
     var cap = 0;
     if (c.saveData || /(^|-)2g$/.test(c.effectiveType || '')) cap = 360;
-    else if (c.effectiveType === '3g' || (c.downlink > 0 && c.downlink < 2)) cap = 480;
-    else if (c.downlink > 0 && c.downlink < 5) cap = 720;
+    else if (c.effectiveType === '3g' || (down && down < 2)) cap = 480;
+    else if (down && down < 5) cap = 720;
     return cap && cap < Number(wanted) ? String(cap) : wanted;
   }
 

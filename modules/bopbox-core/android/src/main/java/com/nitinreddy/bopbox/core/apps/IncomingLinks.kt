@@ -9,6 +9,21 @@ import com.nitinreddy.bopbox.core.util.UrlUtils
 object IncomingLinks {
   private val urlInText = Regex("https?://\\S+")
 
+  /** Extra set on an Intent once its link has been opened. */
+  const val EXTRA_HANDLED = "com.nitinreddy.bopbox.LINK_HANDLED"
+
+  /** `Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY`, kept here so this stays free of Android. */
+  const val FLAG_LAUNCHED_FROM_HISTORY = 0x00100000
+
+  /**
+   * Whether an intent still carries a link to open. Android hands the same launch intent back
+   * whenever the activity is recreated (with our mark on it, [EXTRA_HANDLED]) or reopened from
+   * Recents after the process was killed (flagged as launched from history); in both cases its
+   * link was opened long ago and must not pull the user back to it.
+   */
+  fun isNew(flags: Int, alreadyHandled: Boolean): Boolean =
+    !alreadyHandled && (flags and FLAG_LAUNCHED_FROM_HISTORY) == 0
+
   /**
    * @param action the intent action (`android.intent.action.VIEW` / `SEND`)
    * @param data the intent's data URI as a string, for VIEW

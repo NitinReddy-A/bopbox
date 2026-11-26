@@ -45,10 +45,15 @@ class BopboxCoreModule : Module() {
 
   /** A YouTube link another app sent us before JS was ready to receive the event. */
   @Volatile private var pendingUrl: String? = null
-  private var handledLaunchIntent: Intent? = null
 
   private fun handleIntent(intent: Intent?) {
-    val url = intent?.let { IncomingLinks.resolve(it.action, it.dataString, it.getStringExtra(Intent.EXTRA_TEXT)) } ?: return
+    if (intent == null) return
+    val handled = runCatching { intent.getBooleanExtra(IncomingLinks.EXTRA_HANDLED, false) }.getOrDefault(true)
+    if (!IncomingLinks.isNew(intent.flags, handled)) return
+    // Marked on the Intent itself, which a recreated activity (font size or language change)
+    // gets back as its launch intent: the link must not open a second time then.
+    runCatching { intent.putExtra(IncomingLinks.EXTRA_HANDLED, true) }
+    val url = IncomingLinks.resolve(intent.action, intent.dataString, runCatching { intent.getStringExtra(Intent.EXTRA_TEXT) }.getOrNull()) ?: return
     pendingUrl = url
     sendEvent(EVENT_OPEN_URL, mapOf("url" to url))
   }
@@ -87,13 +92,8 @@ class BopboxCoreModule : Module() {
 
     OnActivityEntersForeground {
       WebViewPool.setBackground(false)
-      appContext.currentActivity?.intent?.let { launch ->
-        // The intent that cold-started us arrives before JS listens; keep it for consumeLaunchUrl.
-        if (launch !== handledLaunchIntent) {
-          handledLaunchIntent = launch
-          handleIntent(launch)
-        }
-      }
+      // The intent that cold-started us arrives before JS listens; keep it for consumeLaunchUrl.
+      handleIntent(appContext.currentActivity?.intent)
       (appContext.currentActivity as? ComponentActivity)?.let { activity ->
         main.post { PipController.attach(activity) }
       }

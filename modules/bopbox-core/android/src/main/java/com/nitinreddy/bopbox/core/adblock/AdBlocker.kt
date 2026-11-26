@@ -147,8 +147,13 @@ object AdBlocker {
   /** Force a filter list refresh. [onDone] runs on the adblock thread. */
   fun updateNow(onDone: (Stats) -> Unit) {
     executor.execute {
-      downloadLists()
-      onDone(stats())
+      try {
+        downloadLists()
+      } catch (t: Throwable) {
+        Log.w(TAG, "filter update failed", t)
+      } finally {
+        onDone(stats())
+      }
     }
   }
 
@@ -182,27 +187,33 @@ object AdBlocker {
   private fun downloadLists() {
     updating = true
     notifyListeners()
-    var changed = false
-    val remote = FilterLists.UPDATE_URLS
-    for ((name, url) in remote) {
-      val text = fetch(url) ?: continue
-      if (!FilterLists.looksValid(text)) {
-        Log.w(TAG, "rejected suspicious list from $url")
-        continue
+    try {
+      var changed = false
+      val remote = FilterLists.UPDATE_URLS
+      for ((name, url) in remote) {
+        val text = fetch(url) ?: continue
+        if (!FilterLists.looksValid(text)) {
+          Log.w(TAG, "rejected suspicious list from $url")
+          continue
+        }
+        // One list that cannot be saved (storage full) must not stop the others.
+        val saved = runCatching {
+          val tmp = File(cacheDir(), "$name.tmp")
+          tmp.writeText(text)
+          tmp.renameTo(File(cacheDir(), name)) || run { File(cacheDir(), name).delete(); tmp.renameTo(File(cacheDir(), name)) }
+        }.onFailure { Log.w(TAG, "could not save $name", it) }.getOrDefault(false)
+        if (saved) changed = true
       }
-      val tmp = File(cacheDir(), "$name.tmp")
-      tmp.writeText(text)
-      if (tmp.renameTo(File(cacheDir(), name)) || run { File(cacheDir(), name).delete(); tmp.renameTo(File(cacheDir(), name)) }) {
-        changed = true
+      if (changed) {
+        lastUpdatedMs = System.currentTimeMillis()
+        appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putLong("lastUpdated", lastUpdatedMs).apply()
+        rebuild()
       }
+    } finally {
+      // Whatever happened, the update is over: the UI must not show it running forever.
+      updating = false
+      notifyListeners()
     }
-    if (changed) {
-      lastUpdatedMs = System.currentTimeMillis()
-      appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putLong("lastUpdated", lastUpdatedMs).apply()
-      rebuild()
-    }
-    updating = false
-    notifyListeners()
   }
 
   private fun fetch(url: String): String? = try {
